@@ -10,7 +10,7 @@ async function main() {
   const port = parseInt(process.env.WEB_PORT || '3000', 10);
   const host = process.env.WEB_HOST || '0.0.0.0';
 
-  console.log(`[${new Date().toISOString()}] Initializing Subsyncarr Plus Server...`);
+  console.log(`[${new Date().toISOString()}] Initializing SubSyncArr-Ng Server...`);
 
   const stateManager = new StateManager(dbPath);
   const engine = new ProcessingEngine();
