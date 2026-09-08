@@ -1,5 +1,5 @@
 import { buildOutputPath, execPromise, ProcessingResult } from './helpers';
-import { existsSync } from 'fs';
+import { existsSync, unlinkSync } from 'fs';
 import { getSuffixConfig } from './config';
 
 export async function generateFfsubsyncSubtitles(srtPath: string, videoPath: string): Promise<ProcessingResult> {
@@ -26,6 +26,15 @@ export async function generateFfsubsyncSubtitles(srtPath: string, videoPath: str
       stderr: stderr || undefined,
     };
   } catch (error) {
+    // Clean up partial or bad output file written before failure
+    if (existsSync(outputPath)) {
+      try {
+        unlinkSync(outputPath);
+      } catch {
+        // Ignore unlink error
+      }
+    }
+
     const errorMessage = error instanceof Error ? error.message : String(error);
     const isTimeout = errorMessage.includes('SIGTERM') || errorMessage.includes('timed out');
 
