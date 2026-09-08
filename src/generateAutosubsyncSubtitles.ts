@@ -6,7 +6,11 @@ export function isForcedSubtitle(filePath: string): boolean {
   return /\.forced\.srt$/i.test(filePath) || /[-._]forced[-._]/i.test(filePath);
 }
 
-export async function generateAutosubsyncSubtitles(srtPath: string, videoPath: string): Promise<ProcessingResult> {
+export async function generateAutosubsyncSubtitles(
+  srtPath: string,
+  videoPath: string,
+  onLog?: (chunk: string) => void,
+): Promise<ProcessingResult> {
   const outputPath = buildOutputPath(srtPath, getSuffixConfig().autosubsync);
 
   // Check if forced subtitle should be skipped for autosubsync (autosubsync fails on sparse text)
@@ -32,7 +36,7 @@ export async function generateAutosubsyncSubtitles(srtPath: string, videoPath: s
     const maxShift = process.env.AUTOSUBSYNC_MAX_SHIFT_SECS ? ` --max_shift_secs ${process.env.AUTOSUBSYNC_MAX_SHIFT_SECS}` : '';
     const command = `autosubsync --parallelism ${parallelism}${maxShift} "${videoPath}" "${srtPath}" "${outputPath}"`;
     console.log(`${new Date().toLocaleString()} Processing: ${command}`);
-    const { stdout, stderr } = await execPromise(command);
+    const { stdout, stderr } = await execPromise(command, undefined, onLog);
     return {
       success: true,
       message: `Successfully processed: ${outputPath}`,

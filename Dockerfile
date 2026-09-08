@@ -56,6 +56,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PYTHONWARNINGS="ignore::UserWarning"
+ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 

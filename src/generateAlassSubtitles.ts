@@ -2,7 +2,11 @@ import { buildOutputPath, execPromise, ProcessingResult } from './helpers';
 import { existsSync, unlinkSync } from 'fs';
 import { getSuffixConfig } from './config';
 
-export async function generateAlassSubtitles(srtPath: string, videoPath: string): Promise<ProcessingResult> {
+export async function generateAlassSubtitles(
+  srtPath: string,
+  videoPath: string,
+  onLog?: (chunk: string) => void,
+): Promise<ProcessingResult> {
   const outputPath = buildOutputPath(srtPath, getSuffixConfig().alass);
 
   const exists = existsSync(outputPath);
@@ -17,7 +21,7 @@ export async function generateAlassSubtitles(srtPath: string, videoPath: string)
   try {
     const command = `alass "${videoPath}" "${srtPath}" "${outputPath}"`;
     console.log(`${new Date().toLocaleString()} Processing: ${command}`);
-    const { stdout, stderr } = await execPromise(command);
+    const { stdout, stderr } = await execPromise(command, undefined, onLog);
     return {
       success: true,
       message: `Successfully processed: ${outputPath}`,

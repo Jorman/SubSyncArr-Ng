@@ -15,6 +15,7 @@ export class ProcessingEngine extends EventEmitter {
   private enabledEngines: string[];
   private logBuffer: string[] = [];
   private maxLogBufferSize: number;
+  private fileLogs: Map<string, string[]> = new Map();
   public stateManager?: StateManager;
 
   constructor() {
@@ -34,6 +35,31 @@ export class ProcessingEngine extends EventEmitter {
 
     this.logBuffer.push(message);
     this.emit('log', message);
+  }
+
+  private appendFileLog(srtPath: string, message: string): void {
+    let logs = this.fileLogs.get(srtPath);
+    if (!logs) {
+      logs = [];
+      this.fileLogs.set(srtPath, logs);
+    }
+    if (logs.length >= 300) {
+      logs.shift();
+    }
+    logs.push(message);
+    this.emit('file:log', { srtPath, log: message });
+  }
+
+  getFileLogs(srtPath: string): string[] {
+    return this.fileLogs.get(srtPath) || [];
+  }
+
+  getAllActiveFileLogs(): Record<string, string[]> {
+    const result: Record<string, string[]> = {};
+    for (const [path, logs] of this.fileLogs.entries()) {
+      result[path] = logs;
+    }
+    return result;
   }
 
   getLogs(): string[] {
@@ -70,12 +96,17 @@ export class ProcessingEngine extends EventEmitter {
   }
 
   private async processFile(srtPath: string): Promise<void> {
-    const fileName = srtPath.split('/').pop();
-    this.log(`[${new Date().toISOString()}] Processing: ${fileName}`);
+    this.fileLogs.set(srtPath, []);
+    const fileName = srtPath.split('/').pop() || srtPath;
+    const startMsg = `[${new Date().toISOString()}] Processing: ${fileName}`;
+    this.log(startMsg);
+    this.appendFileLog(srtPath, startMsg);
 
     // Check if cancelled
     if (this.cancelledFiles.has(srtPath)) {
-      this.log(`[${new Date().toISOString()}] Skipped (cancelled): ${fileName}`);
+      const skipMsg = `[${new Date().toISOString()}] Skipped (cancelled): ${fileName}`;
+      this.log(skipMsg);
+      this.appendFileLog(srtPath, skipMsg);
       this.emit('file:skipped', { srtPath, reason: 'cancelled' });
       return;
     }
@@ -85,14 +116,18 @@ export class ProcessingEngine extends EventEmitter {
     this.emit('file:started', { srtPath, videoPath });
 
     if (!videoPath) {
-      this.log(`[${new Date().toISOString()}] No matching video found for: ${fileName}`);
+      const noVideoMsg = `[${new Date().toISOString()}] No matching video found for: ${fileName}`;
+      this.log(noVideoMsg);
+      this.appendFileLog(srtPath, noVideoMsg);
 
       const shouldDeleteOrphan = process.env.DELETE_ORPHANED_SRT !== 'false';
       if (shouldDeleteOrphan) {
         try {
           if (existsSync(srtPath)) {
             unlinkSync(srtPath);
-            this.log(`[${new Date().toISOString()}] 🗑 Deleted orphaned subtitle: ${fileName}`);
+            const delMsg = `[${new Date().toISOString()}] 🗑 Deleted orphaned subtitle: ${fileName}`;
+            this.log(delMsg);
+            this.appendFileLog(srtPath, delMsg);
           }
           // Also remove any previously synced variants for this orphaned srt if they exist
           const suffixConfig = getSuffixConfig();
@@ -101,16 +136,16 @@ export class ProcessingEngine extends EventEmitter {
             const syncedPath = buildOutputPath(srtPath, suffix);
             if (existsSync(syncedPath)) {
               unlinkSync(syncedPath);
-              this.log(
-                `[${new Date().toISOString()}] 🗑 Deleted orphaned synced subtitle: ${syncedPath.split('/').pop()}`,
-              );
+              const delSyncedMsg = `[${new Date().toISOString()}] 🗑 Deleted orphaned synced subtitle: ${syncedPath.split('/').pop()}`;
+              this.log(delSyncedMsg);
+              this.appendFileLog(srtPath, delSyncedMsg);
             }
           }
           this.emit('file:no_video', { srtPath, deleted: true });
         } catch (error) {
-          this.log(
-            `[${new Date().toISOString()}] ✗ Failed to delete orphaned subtitle ${fileName}: ${error instanceof Error ? error.message : String(error)}`,
-          );
+          const failDelMsg = `[${new Date().toISOString()}] ✗ Failed to delete orphaned subtitle ${fileName}: ${error instanceof Error ? error.message : String(error)}`;
+          this.log(failDelMsg);
+          this.appendFileLog(srtPath, failDelMsg);
           this.emit('file:no_video', { srtPath, deleted: false });
         }
       } else {
@@ -119,7 +154,9 @@ export class ProcessingEngine extends EventEmitter {
       return;
     }
 
-    this.log(`[${new Date().toISOString()}] Found video: ${videoPath.split('/').pop()}`);
+    const foundVideoMsg = `[${new Date().toISOString()}] Found video: ${videoPath.split('/').pop()}`;
+    this.log(foundVideoMsg);
+    this.appendFileLog(srtPath, foundVideoMsg);
 
     // Process with each enabled engine
     let anyEngineSucceeded = false;
@@ -128,14 +165,18 @@ export class ProcessingEngine extends EventEmitter {
     for (const engine of this.enabledEngines) {
       // Check cancellation before each engine
       if (this.cancelledFiles.has(srtPath)) {
-        this.log(`[${new Date().toISOString()}] Skipped (cancelled): ${fileName}`);
+        const skipMsg = `[${new Date().toISOString()}] Skipped (cancelled): ${fileName}`;
+        this.log(skipMsg);
+        this.appendFileLog(srtPath, skipMsg);
         this.emit('file:skipped', { srtPath, reason: 'cancelled' });
         return;
       }
 
       // Check if engine should be skipped due to consecutive failures
       if (this.stateManager?.shouldSkipEngine(srtPath, engine)) {
-        this.log(`[${new Date().toISOString()}] ⊘ Skipping ${engine} (3+ consecutive failures): ${fileName}`);
+        const consecMsg = `[${new Date().toISOString()}] ⊘ Skipping ${engine} (3+ consecutive failures): ${fileName}`;
+        this.log(consecMsg);
+        this.appendFileLog(srtPath, consecMsg);
         this.emit('file:engine_completed', {
           srtPath,
           engine,
@@ -149,22 +190,32 @@ export class ProcessingEngine extends EventEmitter {
         continue; // Skip to next engine (allEnginesSkipped remains true)
       }
 
-      this.log(`[${new Date().toISOString()}] Starting ${engine} for: ${fileName}`);
+      const engStartMsg = `[${new Date().toISOString()}] Starting ${engine} for: ${fileName}`;
+      this.log(engStartMsg);
+      this.appendFileLog(srtPath, engStartMsg);
       this.emit('file:engine_started', { srtPath, engine });
 
       const startTime = Date.now();
       let result;
 
+      const onEngineLog = (chunk: string) => {
+        const clean = chunk.replace(/\r/g, '\n');
+        const lines = clean.split('\n').filter((l) => l.trim().length > 0);
+        for (const line of lines) {
+          this.appendFileLog(srtPath, `[${engine}] ${line}`);
+        }
+      };
+
       try {
         switch (engine) {
           case 'ffsubsync':
-            result = await generateFfsubsyncSubtitles(srtPath, videoPath);
+            result = await generateFfsubsyncSubtitles(srtPath, videoPath, onEngineLog);
             break;
           case 'autosubsync':
-            result = await generateAutosubsyncSubtitles(srtPath, videoPath);
+            result = await generateAutosubsyncSubtitles(srtPath, videoPath, onEngineLog);
             break;
           case 'alass':
-            result = await generateAlassSubtitles(srtPath, videoPath);
+            result = await generateAlassSubtitles(srtPath, videoPath, onEngineLog);
             break;
           default:
             continue;
@@ -177,7 +228,9 @@ export class ProcessingEngine extends EventEmitter {
           if (result.success && result.message?.includes('already processed')) {
             anyEnginePreviouslySynced = true;
           }
-          this.log(`[${new Date().toISOString()}] ⊘ ${engine} skipped (${result.message || 'already processed'}): ${fileName}`);
+          const skipResultMsg = `[${new Date().toISOString()}] ⊘ ${engine} skipped (${result.message || 'already processed'}): ${fileName}`;
+          this.log(skipResultMsg);
+          this.appendFileLog(srtPath, skipResultMsg);
           this.emit('file:engine_completed', {
             srtPath,
             engine,
@@ -190,11 +243,14 @@ export class ProcessingEngine extends EventEmitter {
         allEnginesSkipped = false;
 
         const status = result.success ? '✓' : '✗';
-        this.log(
-          `[${new Date().toISOString()}] ${status} ${engine} completed (${(duration / 1000).toFixed(1)}s): ${fileName}`,
-        );
+        const engDoneMsg = `[${new Date().toISOString()}] ${status} ${engine} completed (${(duration / 1000).toFixed(1)}s): ${fileName}`;
+        this.log(engDoneMsg);
+        this.appendFileLog(srtPath, engDoneMsg);
         if (!result.success) {
-          this.log(`[${new Date().toISOString()}]   Error: ${result.message}`);
+          if (result.message) {
+            this.log(`[${new Date().toISOString()}]   Error: ${result.message}`);
+            this.appendFileLog(srtPath, `[${engine}] Error: ${result.message}`);
+          }
           // Log stderr if available for debugging
           if (result.stderr) {
             this.log(`[${new Date().toISOString()}]   Stderr: ${result.stderr.substring(0, 500)}`);
@@ -215,15 +271,19 @@ export class ProcessingEngine extends EventEmitter {
         allEnginesSkipped = false;
 
         const duration = Date.now() - startTime;
-        this.log(`[${new Date().toISOString()}] ✗ ${engine} failed (${(duration / 1000).toFixed(1)}s): ${fileName}`);
-        this.log(`[${new Date().toISOString()}]   Error: ${error instanceof Error ? error.message : String(error)}`);
+        const engFailMsg = `[${new Date().toISOString()}] ✗ ${engine} failed (${(duration / 1000).toFixed(1)}s): ${fileName}`;
+        this.log(engFailMsg);
+        this.appendFileLog(srtPath, engFailMsg);
+        const errMsg = error instanceof Error ? error.message : String(error);
+        this.log(`[${new Date().toISOString()}]   Error: ${errMsg}`);
+        this.appendFileLog(srtPath, `[${engine}] Error: ${errMsg}`);
 
         this.emit('file:engine_completed', {
           srtPath,
           engine,
           result: {
             success: false,
-            message: error instanceof Error ? error.message : String(error),
+            message: errMsg,
             duration,
           },
         });
@@ -231,13 +291,19 @@ export class ProcessingEngine extends EventEmitter {
     }
 
     if (anyEngineSucceeded || anyEnginePreviouslySynced) {
-      this.log(`[${new Date().toISOString()}] ✓ Completed successfully for: ${fileName}`);
+      const finishMsg = `[${new Date().toISOString()}] ✓ Completed successfully for: ${fileName}`;
+      this.log(finishMsg);
+      this.appendFileLog(srtPath, finishMsg);
       this.emit('file:completed', { srtPath });
     } else if (allEnginesSkipped) {
-      this.log(`[${new Date().toISOString()}] ⊘ All engines skipped for: ${fileName}`);
+      const skipAllMsg = `[${new Date().toISOString()}] ⊘ All engines skipped for: ${fileName}`;
+      this.log(skipAllMsg);
+      this.appendFileLog(srtPath, skipAllMsg);
       this.emit('file:skipped', { srtPath, reason: 'all_engines_skipped' });
     } else {
-      this.log(`[${new Date().toISOString()}] ✗ All engines failed for: ${fileName}`);
+      const failAllMsg = `[${new Date().toISOString()}] ✗ All engines failed for: ${fileName}`;
+      this.log(failAllMsg);
+      this.appendFileLog(srtPath, failAllMsg);
       this.emit('file:failed', { srtPath });
     }
   }
@@ -255,5 +321,6 @@ export class ProcessingEngine extends EventEmitter {
   reset(): void {
     this.cancelledFiles.clear();
     this.clearLogs();
+    this.fileLogs.clear();
   }
 }

@@ -55,7 +55,10 @@
       </header>
 
       <section id="currentRun" class="hidden">
-        <h2>Currently Processing</h2>
+        <div class="section-header">
+          <h2>Currently Processing</h2>
+          <button id="viewCurrentRunLogs" class="btn btn-secondary btn-sm" type="button">📜 Live Run Log</button>
+        </div>
         <div class="progress-wrapper">
           <div class="progress-bar">
             <div class="progress-fill" id="progressFill"></div>
@@ -113,6 +116,23 @@
         <div class="modal-actions">
           <button id="copyLogs" class="btn btn-secondary">📋 Copy to Clipboard</button>
           <button id="closeLogsButton" class="btn btn-primary">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="fileLogsModal" class="modal hidden">
+      <div class="modal-content file-logs-modal">
+        <div class="modal-header">
+          <h3 id="fileLogsTitle">File Log</h3>
+          <button id="closeFileLogsModal" class="btn-close">&times;</button>
+        </div>
+        <div id="fileLogsMeta" class="file-logs-meta"></div>
+        <div id="fileLogsEngines" class="file-logs-engines"></div>
+        <div class="file-logs-output-header">Execution & Engine Output</div>
+        <pre id="fileLogsContent" class="logs-content file-logs-pre"></pre>
+        <div class="modal-actions">
+          <button id="copyFileLogs" class="btn btn-secondary">📋 Copy to Clipboard</button>
+          <button id="closeFileLogsButton" class="btn btn-primary">Close</button>
         </div>
       </div>
     </div>

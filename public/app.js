@@ -5,6 +5,8 @@ class SubsyncarrPlusClient {
     this.reconnectInterval = 3000;
     this.historyCache = {}; // Cache run data for file lookups
     this.selectedPaths = [];
+    this.fileLogs = {};
+    this.activeModalFile = null;
 
     this.initTheme();
     this.initWebSocket();
@@ -36,11 +38,56 @@ class SubsyncarrPlusClient {
     };
   }
 
+  hashPath(path) {
+    let hash = 0;
+    for (let i = 0; i < path.length; i++) {
+      hash = (hash << 5) - hash + path.charCodeAt(i);
+      hash |= 0;
+    }
+    return Math.abs(hash).toString(36);
+  }
+
+  handleFileLog(srtPath, log) {
+    if (!this.fileLogs[srtPath]) {
+      this.fileLogs[srtPath] = [];
+    }
+    this.fileLogs[srtPath].push(log);
+    if (this.fileLogs[srtPath].length > 300) {
+      this.fileLogs[srtPath].shift();
+    }
+
+    // Append to live element if currently visible
+    const fileId = this.hashPath(srtPath);
+    const container = document.getElementById(`log-${fileId}`);
+    if (container) {
+      const line = document.createElement('div');
+      line.className = 'file-log-line';
+      line.textContent = log;
+      container.appendChild(line);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    // If modal is open for this file, append live
+    if (this.activeModalFile === srtPath) {
+      const modalContent = document.getElementById('fileLogsContent');
+      if (modalContent) {
+        modalContent.textContent += (modalContent.textContent ? '\n' : '') + log;
+        modalContent.scrollTop = modalContent.scrollHeight;
+      }
+    }
+  }
+
   handleMessage(msg) {
     switch (msg.type) {
       case 'state':
         this.state = msg.data;
+        if (msg.data.fileLogs) {
+          this.fileLogs = { ...this.fileLogs, ...msg.data.fileLogs };
+        }
         this.render();
+        break;
+      case 'file:log':
+        this.handleFileLog(msg.data.srtPath, msg.data.log);
         break;
       case 'run:started':
         this.state.currentRun = msg.data;
@@ -326,6 +373,45 @@ class SubsyncarrPlusClient {
     document.getElementById('logsModal').addEventListener('click', (e) => {
       if (e.target.id === 'logsModal') {
         document.getElementById('logsModal').classList.add('hidden');
+      }
+    });
+
+    // File logs modal handlers
+    document.getElementById('closeFileLogsModal')?.addEventListener('click', () => {
+      this.closeFileLogsModal();
+    });
+
+    document.getElementById('closeFileLogsButton')?.addEventListener('click', () => {
+      this.closeFileLogsModal();
+    });
+
+    document.getElementById('fileLogsModal')?.addEventListener('click', (e) => {
+      if (e.target.id === 'fileLogsModal') {
+        this.closeFileLogsModal();
+      }
+    });
+
+    document.getElementById('copyFileLogs')?.addEventListener('click', async () => {
+      const content = document.getElementById('fileLogsContent').textContent;
+      try {
+        await navigator.clipboard.writeText(content);
+        const btn = document.getElementById('copyFileLogs');
+        const originalText = btn.textContent;
+        btn.textContent = '✓ Copied!';
+        setTimeout(() => {
+          btn.textContent = originalText;
+        }, 2000);
+      } catch (err) {
+        console.error('Failed to copy file logs:', err);
+      }
+    });
+
+    // View current run logs
+    document.getElementById('viewCurrentRunLogs')?.addEventListener('click', () => {
+      if (this.state.currentRun) {
+        this.viewLogs(this.state.currentRun.id);
+      } else {
+        alert('No active run currently running');
       }
     });
 
@@ -647,19 +733,36 @@ class SubsyncarrPlusClient {
     // Render processing files
     const progressHtml = processing
       .map((file) => {
-        const engines = JSON.parse(file.engines);
+        const engines = JSON.parse(file.engines || '{}');
+        const fileId = this.hashPath(file.file_path);
+        const logs = this.fileLogs[file.file_path] || [];
+        const logsText = logs.map((l) => `<div class="file-log-line">${this.escapeHtml(l)}</div>`).join('');
+        const escapedPath = file.file_path.replace(/'/g, "\\'");
+
         return `
         <div class="file-card processing">
           <div class="file-header">
-            <div class="file-name">${this.basename(file.file_path)}</div>
-            <button class="btn-skip" onclick="client.skipFile('${file.file_path.replace(/'/g, "\\'")}')">
-              Skip
-            </button>
+            <div class="file-name">${this.escapeHtml(this.basename(file.file_path))}</div>
+            <div class="file-actions">
+              <button class="btn-log" type="button" onclick="client.showFileLog('${escapedPath}')">
+                📄 View Log
+              </button>
+              <button class="btn-skip" type="button" onclick="client.skipFile('${escapedPath}')">
+                Skip
+              </button>
+            </div>
           </div>
           <div class="engine-status">
-            ${file.current_engine ? `⚙️ Working on ${file.current_engine}` : 'Starting...'}
+            ${file.current_engine ? `⚙️ Working on ${this.escapeHtml(file.current_engine)}` : 'Starting...'}
           </div>
           ${this.renderEngineResults(engines)}
+          <div class="file-live-log-box">
+            <div class="live-log-top">
+              <span class="live-tag"><span class="live-dot"></span> LIVE FILE LOG</span>
+              <button class="btn-copy-mini" type="button" onclick="client.copyFileLog('${escapedPath}', event)">Copy</button>
+            </div>
+            <div class="file-live-log-content" id="log-${fileId}">${logsText}</div>
+          </div>
         </div>
       `;
       })
@@ -667,13 +770,30 @@ class SubsyncarrPlusClient {
 
     document.getElementById('filesInProgress').innerHTML = progressHtml;
 
+    // Auto-scroll log containers
+    processing.forEach((file) => {
+      const fileId = this.hashPath(file.file_path);
+      const container = document.getElementById(`log-${fileId}`);
+      if (container) {
+        container.scrollTop = container.scrollHeight;
+      }
+    });
+
     // Render completed files
     const completedHtml = completed
       .map((file) => {
-        const engines = JSON.parse(file.engines);
+        const engines = JSON.parse(file.engines || '{}');
+        const escapedPath = file.file_path.replace(/'/g, "\\'");
         return `
         <div class="file-card ${file.status}">
-          <div class="file-name">${this.basename(file.file_path)}</div>
+          <div class="file-header">
+            <div class="file-name">${this.escapeHtml(this.basename(file.file_path))}</div>
+            <div class="file-actions">
+              <button class="btn-file-log" type="button" onclick="client.showFileLog('${escapedPath}')">
+                📄 Log
+              </button>
+            </div>
+          </div>
           ${this.renderEngineResults(engines)}
         </div>
       `;
@@ -682,6 +802,98 @@ class SubsyncarrPlusClient {
 
     document.getElementById('completedList').innerHTML =
       completedHtml || '<p class="no-data">No completed files yet</p>';
+  }
+
+  async showFileLog(filePath) {
+    this.activeModalFile = filePath;
+    const file = this.state.files.find((f) => f.file_path === filePath);
+    const fileName = this.basename(filePath);
+    document.getElementById('fileLogsTitle').textContent = `Log: ${fileName}`;
+
+    // Render meta
+    const metaContainer = document.getElementById('fileLogsMeta');
+    metaContainer.innerHTML = `
+      <div class="file-logs-meta-item">
+        <span class="file-logs-meta-label">Subtitle:</span>
+        <span class="file-logs-meta-val">${this.escapeHtml(filePath)}</span>
+      </div>
+      <div class="file-logs-meta-item">
+        <span class="file-logs-meta-label">Video:</span>
+        <span class="file-logs-meta-val">${this.escapeHtml(file?.video_path || 'Not detected or not checked')}</span>
+      </div>
+      <div class="file-logs-meta-item">
+        <span class="file-logs-meta-label">Status:</span>
+        <span class="file-logs-meta-val"><strong>${file?.status?.toUpperCase() || 'UNKNOWN'}</strong>${file?.current_engine ? ` (Working on ${this.escapeHtml(file.current_engine)})` : ''}</span>
+      </div>
+    `;
+
+    // Render engines breakdown
+    const enginesContainer = document.getElementById('fileLogsEngines');
+    if (file && file.engines) {
+      const engines = JSON.parse(file.engines || '{}');
+      enginesContainer.innerHTML = this.renderEngineResults(engines);
+    } else {
+      enginesContainer.innerHTML = '';
+    }
+
+    // Load logs: from local memory, or fetch from server
+    let logs = this.fileLogs[filePath] || [];
+    if (logs.length === 0) {
+      try {
+        const res = await fetch(`/api/file-logs?path=${encodeURIComponent(filePath)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.logs && data.logs.length > 0) {
+            logs = data.logs;
+            this.fileLogs[filePath] = logs;
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching file logs:', err);
+      }
+    }
+
+    let fullLogText = logs.join('\n');
+    if (file && file.engines) {
+      const engines = JSON.parse(file.engines || '{}');
+      const engineOutputs = Object.entries(engines)
+        .map(([name, res]) => {
+          let out = '';
+          if (res.stdout) out += `\n--- [${name} STDOUT] ---\n${res.stdout}`;
+          if (res.stderr) out += `\n--- [${name} STDERR] ---\n${res.stderr}`;
+          return out;
+        })
+        .filter(Boolean)
+        .join('\n');
+      if (engineOutputs) {
+        fullLogText = (fullLogText ? fullLogText + '\n\n' : '') + engineOutputs;
+      }
+    }
+
+    const contentElem = document.getElementById('fileLogsContent');
+    contentElem.textContent = fullLogText || 'No log output recorded for this file yet.';
+    contentElem.scrollTop = contentElem.scrollHeight;
+
+    document.getElementById('fileLogsModal').classList.remove('hidden');
+  }
+
+  closeFileLogsModal() {
+    this.activeModalFile = null;
+    document.getElementById('fileLogsModal').classList.add('hidden');
+  }
+
+  copyFileLog(filePath, event) {
+    if (event) event.stopPropagation();
+    const logs = this.fileLogs[filePath] || [];
+    const text = logs.join('\n') || 'No logs recorded.';
+    navigator.clipboard.writeText(text).then(() => {
+      const btn = event?.target;
+      if (btn) {
+        const originalText = btn.textContent;
+        btn.textContent = '✓';
+        setTimeout(() => (btn.textContent = originalText), 1500);
+      }
+    });
   }
 
   renderEngineResults(engines) {

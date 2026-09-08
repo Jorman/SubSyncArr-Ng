@@ -1,4 +1,4 @@
-import { exec } from 'child_process';
+import { spawn } from 'child_process';
 import { basename, dirname, join } from 'path';
 
 export function buildOutputPath(srtPath: string, suffix: string): string {
@@ -33,16 +33,54 @@ function getTimeoutMs(): number {
   return 1800000; // 30 minutes default
 }
 
-export function execPromise(command: string, timeoutMs?: number): Promise<{ stdout: string; stderr: string }> {
+export function execPromise(
+  command: string,
+  timeoutMs?: number,
+  onLog?: (chunk: string) => void,
+): Promise<{ stdout: string; stderr: string }> {
   const timeout = timeoutMs ?? getTimeoutMs();
   return new Promise((resolve, reject) => {
-    exec(command, { timeout, maxBuffer: 1024 * 1024 * 10 }, (error, stdout, stderr) => {
-      if (error) {
-        if (error.killed) {
-          reject(new Error(`Timed out after ${timeout / 1000}s: ${command}`));
-        } else {
-          reject(error);
-        }
+    const child = spawn(command, { shell: true });
+    let stdout = '';
+    let stderr = '';
+    let isTimedOut = false;
+
+    const timer = setTimeout(() => {
+      isTimedOut = true;
+      child.kill('SIGTERM');
+    }, timeout);
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      const text = chunk.toString();
+      stdout += text;
+      if (onLog) {
+        onLog(text);
+      }
+    });
+
+    child.stderr.on('data', (chunk: Buffer) => {
+      const text = chunk.toString();
+      stderr += text;
+      if (onLog) {
+        onLog(text);
+      }
+    });
+
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (isTimedOut) {
+        reject(new Error(`Timed out after ${timeout / 1000}s: ${command}`));
+      } else if (code !== 0) {
+        const error = new Error(`Command failed: ${command}\n${stderr || stdout}`);
+        (error as Error & { code?: number | null; stdout?: string; stderr?: string }).code = code;
+        (error as Error & { code?: number | null; stdout?: string; stderr?: string }).stdout = stdout;
+        (error as Error & { code?: number | null; stdout?: string; stderr?: string }).stderr = stderr;
+        reject(error);
       } else {
         resolve({ stdout, stderr });
       }

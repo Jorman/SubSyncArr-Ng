@@ -11,7 +11,7 @@ export class ProcessingCoordinator {
   private stopRequested: boolean = false;
 
   constructor(
-    private engine: ProcessingEngine,
+    public engine: ProcessingEngine,
     private stateManager: StateManager,
   ) {
     this.enabledEngines = process.env.INCLUDE_ENGINES?.split(',') || ['ffsubsync', 'autosubsync', 'alass'];

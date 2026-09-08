@@ -1013,3 +1013,166 @@ td {
     font-size: 13px;
   }
 }
+
+/* Live File Log & File Log Modal */
+.file-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-log,
+.btn-file-log {
+  padding: 4px 10px;
+  background: var(--card-inner-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s ease;
+}
+
+.btn-log:hover,
+.btn-file-log:hover {
+  background: var(--border);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.file-live-log-box {
+  margin-top: 10px;
+  background: #090d16;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="light"] .file-live-log-box {
+  background: #0f172a;
+  border-color: #334155;
+}
+
+.live-log-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.live-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #38bdf8;
+}
+
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+  animation: pulse-green 1.5s infinite;
+}
+
+.btn-copy-mini {
+  padding: 2px 8px;
+  background: transparent;
+  color: #94a3b8;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-copy-mini:hover {
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.file-live-log-content {
+  margin: 0;
+  padding: 10px 12px;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+  font-size: 12px;
+  line-height: 1.45;
+  color: #cbd5e1;
+  max-height: 160px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.file-live-log-content:empty::before {
+  content: "Waiting for engine output...";
+  color: #64748b;
+  font-style: italic;
+}
+
+.file-logs-modal {
+  max-width: 850px;
+  width: 90%;
+}
+
+.file-logs-meta {
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  background: var(--card-inner-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.file-logs-meta-item {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  word-break: break-all;
+}
+
+.file-logs-meta-label {
+  font-weight: 600;
+  min-width: 80px;
+  color: var(--text-secondary);
+}
+
+.file-logs-meta-val {
+  color: var(--text);
+}
+
+.file-logs-engines {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.file-logs-output-header {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.file-logs-pre {
+  max-height: 420px;
+  min-height: 160px;
+}

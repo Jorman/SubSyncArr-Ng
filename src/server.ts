@@ -298,6 +298,16 @@ export class SubsyncarrPlusServer {
       this.stateManager.resetSkipStatus(filePath, engine);
       res.json({ success: true });
     });
+
+    // Get logs for a specific file
+    this.app.get('/api/file-logs', (req, res) => {
+      const filePath = req.query.path as string;
+      if (!filePath) {
+        return res.status(400).json({ error: 'path parameter required' });
+      }
+      const logs = this.coordinator.engine.getFileLogs(filePath);
+      res.json({ filePath, logs });
+    });
   }
 
   private setupWebSocket() {
@@ -314,6 +324,7 @@ export class SubsyncarrPlusServer {
             currentRun,
             files: currentRun ? this.stateManager.getFileResults(currentRun.id) : [],
             isRunning: this.coordinator.isRunning(),
+            fileLogs: this.coordinator.engine.getAllActiveFileLogs(),
           },
         }),
       );
@@ -342,6 +353,10 @@ export class SubsyncarrPlusServer {
 
     this.stateManager.on('file:updated', ({ file, run }) => {
       this.broadcast({ type: 'file:updated', data: { file, run } });
+    });
+
+    this.coordinator.engine.on('file:log', ({ srtPath, log }: { srtPath: string; log: string }) => {
+      this.broadcast({ type: 'file:log', data: { srtPath, log } });
     });
   }
 
