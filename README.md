@@ -111,6 +111,9 @@ docker run -d \
 | `SYNC_TIMEOUT`              | _(none)_                      | Timeout in seconds per sync operation (overrides SYNC_ENGINE_TIMEOUT_MS)         |
 | `SYNC_ENGINE_TIMEOUT_MS`    | `1800000`                     | Timeout for each sync engine in milliseconds (30 min default)                    |
 | `NODE_OPTIONS`             | `--max-old-space-size=512`    | Node.js options, used here to set memory limit (in MB)                           |
+| `AUTOSUBSYNC_PARALLELISM`   | `1`                           | Number of parallel worker threads for autosubsync (prevents OOM on 4K)           |
+| `AUTOSUBSYNC_SKIP_FORCED`   | `true`                        | Skip autosubsync on `.forced.srt` files (delegates to ffsubsync/alass)           |
+| `DELETE_ORPHANED_SRT`       | `true`                        | Automatically delete `.srt` subtitle files if no matching video file is found    |
 | `WEB_PORT`                 | `3000`                        | Port for the web UI                                                              |
 | `WEB_HOST`                 | `127.0.0.1`                   | Host to bind the web UI to (`0.0.0.0` to expose externally)                     |
 | `TZ`                        | _(system)_                    | Timezone for logging and cron scheduling (e.g., `America/New_York`)              |

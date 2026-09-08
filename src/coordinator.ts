@@ -89,10 +89,15 @@ export class ProcessingCoordinator {
       }
     });
 
-    this.engine.on('file:no_video', ({ srtPath }: { srtPath: string }) => {
+    this.engine.on('file:no_video', ({ srtPath, deleted }: { srtPath: string; deleted?: boolean }) => {
       if (this.currentRunId) {
-        this.stateManager.updateFileStatus(this.currentRunId, srtPath, 'error', null);
-        this.stateManager.incrementRunCounter(this.currentRunId, 'failed');
+        if (deleted) {
+          this.stateManager.updateFileStatus(this.currentRunId, srtPath, 'skipped', null);
+          this.stateManager.incrementRunCounter(this.currentRunId, 'skipped');
+        } else {
+          this.stateManager.updateFileStatus(this.currentRunId, srtPath, 'error', null);
+          this.stateManager.incrementRunCounter(this.currentRunId, 'failed');
+        }
       }
     });
 

@@ -22,9 +22,9 @@ services:
         reservations:
           memory: 256M      # Minimum guaranteed memory
     environment:
-      - PUID=1000 # Set to your user's UID (run `id -u` to find it)
-      - PGID=1000 # Set to your user's GID (run `id -g` to find it)
-      - TZ=Etc/UTC # Replace with your own timezone
+      - PUID=${PUID:-1000} # Set to your user's UID (run `id -u` to find it)
+      - PGID=${PGID:-100} # Set to your user's GID (run `id -g` to find it)
+      - TZ=${TZ:-Europe/Rome} # Replace with your own timezone
       - CRON_SCHEDULE=0 0 * * * # Runs every day at midnight by default
       - SCAN_PATHS=/movies,/tv # Remember to mount these as volumes. Must begin with /. Default valus is `/scan_dir`
       - EXCLUDE_PATHS=/movies/temp,/tv/downloads # Exclude certain sub-directories from the scan
@@ -32,6 +32,7 @@ services:
       - INCLUDE_ENGINES=ffsubsync,autosubsync,alass # Engines to use (ffsubsync, autosubsync, alass)
       - AUTOSUBSYNC_PARALLELISM=1 # 1 worker to save memory and avoid OOM kills on 4K files
       - AUTOSUBSYNC_SKIP_FORCED=true # Skip forced subtitles for autosubsync (ffsubsync and alass will handle them)
+      - DELETE_ORPHANED_SRT=true # Automatically delete subtitle files if no matching video is found
       # Memory configuration (optional):
       # - NODE_OPTIONS=--max-old-space-size=1024 # Increase if you experience OOM errors (default: 512)
       # Timeout configuration (optional - uncomment and adjust if needed):

@@ -1,11 +1,13 @@
 import EventEmitter from 'events';
-import { ScanConfig, getScanConfig } from './config';
+import { existsSync, unlinkSync } from 'fs';
+import { ScanConfig, getScanConfig, getSuffixConfig } from './config';
 import { findAllSrtFiles } from './findAllSrtFiles';
 import { findMatchingVideoFile } from './findMatchingVideoFile';
 import { generateFfsubsyncSubtitles } from './generateFfsubsyncSubtitles';
 import { generateAutosubsyncSubtitles } from './generateAutosubsyncSubtitles';
 import { generateAlassSubtitles } from './generateAlassSubtitles';
 import { StateManager } from './stateManager';
+import { buildOutputPath } from './helpers';
 
 export class ProcessingEngine extends EventEmitter {
   private cancelledFiles: Set<string> = new Set();
@@ -84,7 +86,36 @@ export class ProcessingEngine extends EventEmitter {
 
     if (!videoPath) {
       this.log(`[${new Date().toISOString()}] No matching video found for: ${fileName}`);
-      this.emit('file:no_video', { srtPath });
+
+      const shouldDeleteOrphan = process.env.DELETE_ORPHANED_SRT !== 'false';
+      if (shouldDeleteOrphan) {
+        try {
+          if (existsSync(srtPath)) {
+            unlinkSync(srtPath);
+            this.log(`[${new Date().toISOString()}] 🗑 Deleted orphaned subtitle: ${fileName}`);
+          }
+          // Also remove any previously synced variants for this orphaned srt if they exist
+          const suffixConfig = getSuffixConfig();
+          for (const engine of ['ffsubsync', 'autosubsync', 'alass']) {
+            const suffix = suffixConfig[engine as keyof typeof suffixConfig] || engine;
+            const syncedPath = buildOutputPath(srtPath, suffix);
+            if (existsSync(syncedPath)) {
+              unlinkSync(syncedPath);
+              this.log(
+                `[${new Date().toISOString()}] 🗑 Deleted orphaned synced subtitle: ${syncedPath.split('/').pop()}`,
+              );
+            }
+          }
+          this.emit('file:no_video', { srtPath, deleted: true });
+        } catch (error) {
+          this.log(
+            `[${new Date().toISOString()}] ✗ Failed to delete orphaned subtitle ${fileName}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          this.emit('file:no_video', { srtPath, deleted: false });
+        }
+      } else {
+        this.emit('file:no_video', { srtPath, deleted: false });
+      }
       return;
     }
 
