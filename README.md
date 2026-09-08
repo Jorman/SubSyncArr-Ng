@@ -1,305 +1,221 @@
-# Subsyncarr
+# 🧬 SubSyncArr-Ng
 
-An automated subtitle synchronization tool that runs as a Docker container. It continuously monitors your media directories for video files with out-of-sync subtitles and automatically synchronizes them using three sync engines (ffsubsync, autosubsync, and alass).
+**SubSyncArr-Ng** (Next-Generation) is an automated subtitle synchronization suite designed to run seamlessly in Docker. It continuously monitors your movie and TV show libraries, identifies out-of-sync subtitles, and synchronizes them with precision using three complementary synchronization engines: **ffsubsync**, **autosubsync**, and **alass**.
 
-**Docker Hub:** [mrorbitman/subsyncarr](https://hub.docker.com/r/mrorbitman/subsyncarr)
+SubSyncArr-Ng is non-destructive: it preserves your original subtitles untouched and creates distinct synchronized copies for each engine, providing full redundancy and flexibility in players like Plex, Jellyfin, Emby, and Kodi.
 
-## Features
+---
 
-### Core Functionality
+## 🌟 What's New in SubSyncArr-Ng
 
-- **Automated Subtitle Synchronization** - Syncs subtitles for your entire media library or specific folders.
-- **Multiple Sync Engines** - Uses ffsubsync, autosubsync, and alass for maximum compatibility and success rate
-- **Scheduled Processing** - Runs on a configurable cron schedule (default: daily at midnight) and on container startup
-- **Parallel Processing** - Configure concurrent subtitle processing for faster library syncing
-- **Skip Already Synced Files** - Avoids re-processing files that already have synchronized subtitles or where an engine repeatedly fails.
-- **Processing History** - View past runs with detailed statistics, results, and logs
-- **Configuration Dashboard** - View current settings, monitored paths, and schedule status
-- **Configurable Timeouts** - Set per-engine timeout limits to prevent hung processes
-- **Log Management** - Configurable retention policies with automatic trimming and deletion
-- **Non Destructive** - Creates new files for each engine so no original files are altered. Allows easy switching between engines while watching content.
+- 🌙 **Modern Dark Mode**: Sleek dark interface with responsive theme toggle (☀️ / 🌙), `localStorage` persistence, and automatic operating system theme detection (`prefers-color-scheme`).
+- ⚡ **Live Real-Time File Logs**: Streaming terminal console embedded directly inside the "Currently Processing" card with an active status pulse and auto-scroll, showing audio extraction, speech feature detection, and alignment progress in real time.
+- 📄 **Detailed File Log Modal**: Inspect complete stdout, stderr, execution duration, and timeline for any file (both currently running and completed/historical) with one click.
+- 🗑️ **Orphaned Subtitle Cleanup (`DELETE_ORPHANED_SRT=true`)**: Automatically purges orphaned subtitle files and their previously synced variants if no corresponding video file exists on disk.
+- 🎯 **Smart TV Episode Number Matching**: Intelligently resolves episode numbering differences between subtitles and videos (e.g., matching `00x20` to `S00E20`), preventing valid TV subtitles from being misidentified as orphans.
+- 🛠️ **MKV Attachment Streams Fix for `alass`**: Includes an integrated `ffprobe` wrapper that handles MKV files containing embedded attachment streams (such as subtitle fonts or cover art) without crashing Rust's JSON deserializer.
+- 🚀 **4K Remux / OOM Protection**: Optimizes `autosubsync` worker parallelism (`AUTOSUBSYNC_PARALLELISM=1`) and automatically delegates sparse forced subtitles (`AUTOSUBSYNC_SKIP_FORCED=true`) to `ffsubsync` and `alass`, preventing memory exhaustion and false failures.
+- 📁 **Extended Video Formats**: Native support for `.mkv`, `.mp4`, `.avi`, `.mov`, `.ts`, `.m4v`, `.webm`, `.wmv`, and `.flv`.
 
-## Quick Start
+---
 
-### Using Docker Compose (Recommended)
+## ⚙️ Why 3 Different Sync Engines? How Do They Work?
 
-1. **Create a docker-compose.yaml file** with the following content:
+No single subtitle synchronization algorithm works perfectly for every scenario (movies, TV shows, PAL/NTSC frame rate changes, commercial breaks, noisy audio, or sparse forced dialogue). For this reason, SubSyncArr-Ng runs **three complementary engines**:
+
+```
+                  ┌─────────────────┐
+                  │ Input Subtitle  │ (.srt)
+                  └────────┬────────┘
+                           │
+       ┌───────────────────┼───────────────────┐
+       ▼                   ▼                   ▼
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│  ffsubsync   │    │ autosubsync  │    │    alass     │
+└──────┬───────┘    └──────┬───────┘    └──────┬───────┘
+       │                   │                   │
+       ▼                   ▼                   ▼
+.ffsubsync.srt      .autosubsync.srt       .alass.srt
+```
+
+### 1. `ffsubsync` (Fast Forward Subtitle Sync)
+- **Technology**: Python + WebRTC Voice Activity Detection (VAD) + Fast Fourier Transform (FFT).
+- **How it works**: Uses ffmpeg to extract the audio stream and translates both the audio voice activity and the subtitle timestamps into mathematical signals. It applies FFT-accelerated cross-correlation to find the optimal global linear offset and speed skew.
+- **Best for**: Standard movie releases, linear delays (e.g. subtitles starting 5 seconds too late), and frame-rate conversions (e.g. 23.976 fps to 25.000 fps).
+- **Speed**: Extremely fast (typically 5–15 seconds).
+- **Output**: `<filename>.<lang>.ffsubsync.srt`
+
+### 2. `autosubsync` (Acoustic Feature & Speech Detection)
+- **Technology**: Python + NumPy/SciPy + Pretrained Neural Acoustic Model.
+- **How it works**: Computes Mel-Frequency Cepstral Coefficients (MFCC) and energy spectrograms from the audio track. A trained machine learning model identifies speech frames and computes correlation curves against dialogue blocks across a spectrum of candidate skew factors.
+- **Best for**: Clean movie dialogue and studio audio tracks where speech cadence can be reliably matched.
+- **Special Handling in Ng**: Because autosubsync requires continuous dialogue, SubSyncArr-Ng automatically skips `.forced.srt` files for autosubsync (delegating them to `ffsubsync` and `alass`) and limits worker threads to 1 (`--parallelism 1`) to ensure 4K Remuxes do not trigger Out-Of-Memory (OOM) errors.
+- **Output**: `<filename>.<lang>.autosubsync.srt`
+
+### 3. `alass` (Automatic Language-Agnostic Subtitle Synchronization)
+- **Technology**: Rust + Dynamic Programming Alignment.
+- **How it works**: Analyzes pauses and voice segments using advanced dynamic programming. Unlike pure linear-shift tools, `alass` can split subtitles into independent segments and align each chunk separately.
+- **Best for**: TV shows with commercial breaks, Director's Cut vs Theatrical releases, or video files where scenes have been added or removed in the middle of the timeline.
+- **Speed**: Blazing fast native Rust execution (typically 3–10 seconds).
+- **Output**: `<filename>.<lang>.alass.srt`
+
+---
+
+## 🔄 What Happens During a Scan? (The Workflow)
+
+1. **Discovery & Filtering**: SubSyncArr-Ng scans all paths configured in `SCAN_PATHS` for `.srt` files. Files that are already synchronized (or whose synced outputs already exist) are skipped to save system resources.
+2. **Video Association**: The engine pairs each `.srt` file with its video file in the same directory:
+   - First by exact name match.
+   - Then by progressive tag stripping (removing release group, audio, and resolution tags).
+   - Finally by TV episode pattern matching (`00x20` matches `S00E20`).
+3. **Orphan Cleanup**: If a subtitle has no corresponding video file in its directory and `DELETE_ORPHANED_SRT` is enabled, the orphan subtitle and any obsolete synced variants are deleted automatically.
+4. **Multi-Engine Execution**: Each enabled engine runs in sequence:
+   - Real-time stdout and stderr output is streamed live to the Web UI via WebSockets.
+   - Each engine produces its own separate `.srt` output.
+   - If one engine fails or has insufficient fit quality on noisy background audio, the others continue and succeed.
+5. **Database & History**: Results, timestamps, and full execution logs are recorded in the local SQLite database.
+
+---
+
+## 🚀 Quick Start
+
+### Using Docker Compose
+
+Create or update your `docker-compose.yaml`:
 
 ```yaml
 name: subsyncarr
 
 services:
   subsyncarr:
-    image: mrorbitman/subsyncarr:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: subsyncarr-ng:latest
     container_name: subsyncarr
     ports:
-      - '3000:3000' # Web UI
+      - '3030:3000' # Web UI accessible at http://<host>:3030
     volumes:
       # Mount your media directories
       - /path/to/movies:/movies
       - /path/to/tv:/tv
-      - /path/to/anime:/anime
-      - ./data:/app/data # Persist database across restarts
+      - /path/to/appdata/subsyncarr:/app/data # SQLite database & logs
     restart: unless-stopped
     deploy:
       resources:
         limits:
-          memory: 768M # Hard limit
+          memory: 2048M # Recommended for 4K / high-bitrate media
         reservations:
-          memory: 128M # Minimum guaranteed memory
+          memory: 256M
     environment:
-      - TZ=Etc/UTC # Replace with your own timezone
       - PUID=1000
-      - PGID=10
-      - CRON_SCHEDULE=0 0 * * * # Runs every day at midnight by default
-      - SCAN_PATHS=/movies,/tv # Comma-separated paths to scan
-      - EXCLUDE_PATHS=/movies/temp,/tv/downloads # Optional: exclude directories
-      - MAX_CONCURRENT_SYNC_TASKS=1 # Number of parallel processing tasks
-      - INCLUDE_ENGINES=ffsubsync,autosubsync,alass # Engines to use
+      - PGID=100
+      - TZ=Europe/Rome
+      - CRON_SCHEDULE=0 0 * * * # Automatic scan daily at midnight
+      - SCAN_PATHS=/movies,/tv
+      - EXCLUDE_PATHS=/movies/temp,/tv/downloads
+      - MAX_CONCURRENT_SYNC_TASKS=1
+      - INCLUDE_ENGINES=ffsubsync,autosubsync,alass
+      - AUTOSUBSYNC_PARALLELISM=1
+      - AUTOSUBSYNC_SKIP_FORCED=true
+      - DELETE_ORPHANED_SRT=true
 ```
 
-2. **Update the configuration:**
-
-   - Replace `/path/to/movies`, `/path/to/tv`, etc. with your actual media paths
-   - Update `TZ` to your timezone (e.g., `America/New_York`, `Europe/London`)
-   - Update `PUID` and `PGID` to match your user (run `id` command to find these)
-   - Adjust `SCAN_PATHS` to match your mounted volumes
-
-3. **Start the container:**
+Run the container:
 
 ```bash
 docker compose up -d
 ```
 
-4. **Access the Web UI:**
+Open your browser at **`http://localhost:3030`** (or your server's IP address on port `3030`).
 
-Open your browser to [http://localhost:3000](http://localhost:3000) or whatever port you've mapped to inside docker.
+---
 
-### Using Docker Run
+## 📋 Configuration Options
 
-```bash
-docker run -d \
-  --name subsyncarr \
-  -p 3000:3000 \
-  -v /path/to/movies:/movies \
-  -v /path/to/tv:/tv \
-  -v ./data:/app/data \
-  -e TZ=Etc/UTC \
-  -e PUID=1000 \
-  -e PGID=10 \
-  -e CRON_SCHEDULE="0 0 * * *" \
-  -e SCAN_PATHS=/movies,/tv \
-  -e MAX_CONCURRENT_SYNC_TASKS=1 \
-  mrorbitman/subsyncarr:latest
-```
+### Core Settings
 
-## Configuration
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `SCAN_PATHS` | `/scan_dir` | Comma-separated paths to scan for subtitles (e.g. `/movies,/tv`) |
+| `EXCLUDE_PATHS` | _(none)_ | Comma-separated directory paths to exclude from scanning |
+| `SYNC_LANGUAGES` | _(none)_ | Comma-separated language codes to sync (e.g., `it,en`). If unset, all subtitles are synced |
+| `CRON_SCHEDULE` | `0 0 * * *` | Cron schedule for automatic runs, or `disabled` to turn off |
+| `MAX_CONCURRENT_SYNC_TASKS` | `1` | Number of files processed in parallel (1 is recommended to conserve CPU/RAM) |
+| `INCLUDE_ENGINES` | `ffsubsync,autosubsync,alass` | Comma-separated list of engines to run |
+| `DELETE_ORPHANED_SRT` | `true` | Automatically delete subtitle files that have no matching video in their folder |
+| `AUTOSUBSYNC_PARALLELISM` | `1` | Worker threads for autosubsync (set to 1 to prevent OOM on 4K files) |
+| `AUTOSUBSYNC_SKIP_FORCED` | `true` | Skip autosubsync on `.forced.srt` files (handled by ffsubsync and alass) |
+| `FFSUBSYNC_SUFFIX` | `ffsubsync` | Custom suffix for ffsubsync outputs (e.g. `movie.en.ffsubsync.srt`) |
+| `AUTOSUBSYNC_SUFFIX` | `autosubsync` | Custom suffix for autosubsync outputs |
+| `ALASS_SUFFIX` | `alass` | Custom suffix for alass outputs |
+| `SYNC_ENGINE_TIMEOUT_MS` | `1800000` | Engine timeout in milliseconds (default 30 minutes) |
+| `WEB_PORT` | `3000` | Internal port for the Web UI (mapped to host port via docker-compose) |
+| `WEB_HOST` | `0.0.0.0` | Host interface for Web UI binding |
+| `PUID` | `1000` | User ID for file permissions |
+| `PGID` | `100` | Group ID for file permissions |
+| `TZ` | `Etc/UTC` | Timezone for logs and cron scheduling (e.g. `Europe/Rome`) |
 
-### Core Configuration
+### Database & Retention Settings
 
-| Variable                    | Default                       | Description                                                                      |
-| --------------------------- | ----------------------------- | -------------------------------------------------------------------------------- |
-| `SCAN_PATHS`                | `/scan_dir`                   | Comma-separated directories to scan for SRT files (must be mounted as volumes)   |
-| `EXCLUDE_PATHS`             | _(none)_                      | Comma-separated directories to exclude from scanning                             |
-| `SYNC_LANGUAGES`            | _(none)_                      | Comma-separated language codes to sync (e.g., `en,de`). Only syncs subtitles with matching language tags in the filename (e.g., `movie.en.srt`). If not set, all subtitles are synced. |
-| `CRON_SCHEDULE`             | `0 0 * * *`                   | Cron expression for sync schedule (daily at midnight), or `disabled` to turn off |
-| `MAX_CONCURRENT_SYNC_TASKS` | `1`                           | Number of subtitle files to process in parallel (higher = faster but more CPU)   |
-| `INCLUDE_ENGINES`           | `ffsubsync,autosubsync,alass` | Which sync engines to use (comma-separated)                                      |
-| `FFSUBSYNC_SUFFIX`          | `ffsubsync`                   | Custom suffix for ffsubsync output files (e.g., `sdh` → `movie.en.sdh.srt`)     |
-| `AUTOSUBSYNC_SUFFIX`        | `autosubsync`                 | Custom suffix for autosubsync output files (e.g., `cc` → `movie.en.cc.srt`)     |
-| `ALASS_SUFFIX`              | `alass`                       | Custom suffix for alass output files (e.g., `forced` → `movie.en.forced.srt`)   |
-| `SYNC_TIMEOUT`              | _(none)_                      | Timeout in seconds per sync operation (overrides SYNC_ENGINE_TIMEOUT_MS)         |
-| `SYNC_ENGINE_TIMEOUT_MS`    | `1800000`                     | Timeout for each sync engine in milliseconds (30 min default)                    |
-| `NODE_OPTIONS`             | `--max-old-space-size=512`    | Node.js options, used here to set memory limit (in MB)                           |
-| `AUTOSUBSYNC_PARALLELISM`   | `1`                           | Number of parallel worker threads for autosubsync (prevents OOM on 4K)           |
-| `AUTOSUBSYNC_SKIP_FORCED`   | `true`                        | Skip autosubsync on `.forced.srt` files (delegates to ffsubsync/alass)           |
-| `DELETE_ORPHANED_SRT`       | `true`                        | Automatically delete `.srt` subtitle files if no matching video file is found    |
-| `WEB_PORT`                 | `3000`                        | Port for the web UI                                                              |
-| `WEB_HOST`                 | `127.0.0.1`                   | Host to bind the web UI to (`0.0.0.0` to expose externally)                     |
-| `TZ`                        | _(system)_                    | Timezone for logging and cron scheduling (e.g., `America/New_York`)              |
-| `PUID`                      | `1000`                        | User ID for file permissions (run `id -u` to find yours)                         |
-| `PGID`                      | `1000`                        | Group ID for file permissions (run `id -g` to find yours)                        |
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `DB_PATH` | `/app/data/subsyncarr-plus.db` | SQLite database file location |
+| `LOG_BUFFER_SIZE` | `1000` | Maximum log lines kept in memory |
+| `RETENTION_KEEP_RUNS_DAYS` | `30` | Keep completed runs in database for N days |
+| `RETENTION_TRIM_LOGS_DAYS` | `7` | Trim verbose logs after N days (keeps summary only) |
+| `RETENTION_CLEANUP_INTERVAL_HOURS` | `24` | Frequency of database cleanup job |
 
-### Database & Log Configuration
+---
 
-| Variable                           | Default                        | Description                                 |
-| ---------------------------------- | ------------------------------ | ------------------------------------------- |
-| `DB_PATH`                          | `/app/data/subsyncarr.db` | SQLite database location                    |
-| `LOG_BUFFER_SIZE`                  | `1000`                         | Ring buffer size for in-memory logs         |
-| `RETENTION_KEEP_RUNS_DAYS`         | `30`                           | Keep complete runs for N days               |
-| `RETENTION_TRIM_LOGS_DAYS`         | `7`                            | Trim logs after N days (keeps summary only) |
-| `RETENTION_MAX_LOG_SIZE`           | `10000`                        | Max size for trimmed logs in bytes          |
-| `RETENTION_CLEANUP_INTERVAL_HOURS` | `24`                           | How often to run cleanup (in hours)         |
+## 🖥️ Web UI Guide
 
-### Timeout Configuration
+The Web UI provides complete real-time monitoring and control:
 
-The `SYNC_ENGINE_TIMEOUT_MS` environment variable controls how long each sync engine can run before being terminated. This prevents hung processes from blocking the queue.
+1. **Header & Status Indicators**:
+   - ☀️ / 🌙 **Theme Switcher**: Instant toggle between sleek Dark Mode and Light Mode.
+   - **Watching Folders**: Displays currently monitored directories.
+   - **Next Scheduled Scan**: Shows the next automated cron run time.
+   - **Controls**: *Start Full Run*, *Scan Specific Path* (with interactive folder picker), and *Stop Processing*.
 
-Example configuration:
+2. **Currently Processing Card**:
+   - Live progress bar with completion percentages.
+   - Current engine indicator (`⚙️ Working on ffsubsync`).
+   - **Embedded Live Console**: Monospace terminal box streaming the real-time output of the running engine, complete with pulsing green indicator and auto-scrolling.
+   - **`[📄 View Log]` Button**: Opens a full-screen detailed log modal for the active file.
+   - **`[Skip]` Button**: Cancels processing for that specific file.
+   - **`[📜 Live Run Log]` Button**: Opens the global run log for the entire session.
 
-```yaml
-environment:
-  - SYNC_ENGINE_TIMEOUT_MS=3600000 # 60 minutes for large files
-```
+3. **Completed & Skipped Files**:
+   - Badges showing engine execution times (e.g., `✓ ffsubsync 5.0s`, `✓ alass 3.3s`).
+   - **`[📄 Log]` Button**: Click on any completed file to view its complete timeline, engine duration, stdout, stderr, and copy log output to clipboard.
+   - **`Clear Files` Button**: Cleans completed files from the UI display without altering disk data.
 
+4. **Run History**:
+   - Comprehensive historical table of past runs with file counts, engine pass/fail breakdown (**F**, **Au**, **Al**), duration, and full run log viewer.
 
-### Directory Structure
+---
 
-Your media directory should be organized with video files and their corresponding subtitle files using matching names:
+## 📁 Recommended Media Organization
 
 ```txt
 /movies
-├── Movie Title (2024).mkv
-├── Movie Title (2024).srt          # Will be synchronized
-├── Movie Title (2024).ffsubsync.srt # Generated output
-└── Another Movie.mp4
-    └── Another Movie.srt
+├── The Old Man and the Gun (2018) {imdb-tt2837574}/
+│   ├── The Old Man and the Gun (2018).mkv
+│   ├── The Old Man and the Gun (2018).it.forced.srt          # Original subtitle
+│   ├── The Old Man and the Gun (2018).it.forced.ffsubsync.srt # Synced copy
+│   └── The Old Man and the Gun (2018).it.forced.alass.srt     # Synced copy
 
 /tv
-├── Show Name/
-│   ├── Season 01/
-│   │   ├── Show.S01E01.mkv
-│   │   └── Show.S01E01.srt
+└── American Ninja Warrior (2009)/
+    ├── American Ninja Warrior (2009) - S00E20.mkv
+    ├── American Ninja Warrior (2009) - 00x20 - Celebrity.en.srt          # Original
+    ├── American Ninja Warrior (2009) - 00x20 - Celebrity.en.ffsubsync.srt # Synced
+    └── American Ninja Warrior (2009) - 00x20 - Celebrity.en.alass.srt     # Synced
 ```
 
-The app follows standard naming conventions compatible with Plex, Jellyfin, Emby, and Bazarr.
+---
 
-## Web UI
+## 📄 License
 
-Subsyncarr Plus includes a comprehensive web-based monitoring interface accessible at `http://localhost:3000` after starting the container.
-
-### UI Features
-
-**Real-time Monitoring:**
-
-- Live progress bars showing current processing status
-- File-by-file status updates via WebSocket
-- Engine-level detail (see which sync engine is running)
-- Current and queued files display
-
-**Manual Control:**
-
-- **Start Full Run** - Process all configured directories immediately
-- **Scan Specific Path** - Process a custom directory on demand
-- **Stop Processing** - Cancel all remaining files in current run
-- **Skip File** - Cancel processing for individual files
-
-**File Management:**
-
-- View completed and skipped files
-- Clear processed files from the UI
-- Track file status (pending, processing, completed, skipped, error)
-- See matched video files for each subtitle
-
-**Processing History:**
-
-- Sortable run history table with timestamps
-- Per-run statistics (total, completed, skipped, failed counts)
-- Engine-level results summary with notation:
-  - **F** = ffsubsync result
-  - **Au** = autosubsync result
-  - **Al** = alass result
-- Duration tracking for each run
-- View detailed logs for any past run with copy-to-clipboard functionality
-
-**Configuration Dashboard:**
-
-- Display of monitored paths and excluded paths
-- Schedule status with next run time
-- Human-readable cron schedule translation
-
-### Database Persistence
-
-Processing history is stored in SQLite and persists across container restarts. Ensure the data volume is mounted:
-
-```yaml
-volumes:
-  - ./data:/app/data # Database and logs stored here
-```
-
-## Advanced Features
-
-### Auto-Skip on Repeated Failures
-
-The app intelligently tracks failures for each file/engine combination. After 3 consecutive failures, that engine will be automatically skipped for that specific file, preventing wasted processing time. You can reset skip status via the API endpoint `/api/skip-status/reset`.
-
-### Memory Management
-
-Optimized for low-memory environments with:
-
-- Configurable memory limits (768MB default, 128MB minimum)
-- SQLite optimizations for low RAM usage
-- File-based logging with buffering to reduce memory pressure
-- Automatic database vacuuming and cleanup
-- Ring buffer for in-memory logs
-
-### Log Retention & Cleanup
-
-Automatic cleanup keeps your database size manageable:
-
-- Complete runs retained for 30 days (configurable)
-- Logs trimmed after 7 days, keeping only summaries
-- Runs beyond retention period are automatically deleted
-- Cleanup runs every 24 hours (configurable)
-
-## Troubleshooting
-
-### View Container Logs
-
-```bash
-docker logs -f subsyncarr
-```
-
-### Check Web UI Logs
-
-Detailed processing logs are available in the Web UI under "Processing History" - click on any run to view full logs.
-
-### Permission Issues
-
-If you encounter permission errors, ensure `PUID` and `PGID` match your host user:
-
-```bash
-id -u  # Get your user ID
-id -g  # Get your group ID
-```
-
-Then update your docker-compose.yaml with these values.
-
-> **Note:** Do not use the `user:` directive in docker-compose or `--user` in docker run. The container must start as root so the entrypoint can configure file permissions using `PUID`/`PGID`, then drops to the unprivileged user automatically via `gosu`.
-
-### Memory Issues
-
-If the container is being killed due to OOM (Out Of Memory):
-
-1. Reduce `MAX_CONCURRENT_SYNC_TASKS` to 1
-2. Increase memory limit in `NODE_OPTIONS` (e.g., `--max-old-space-size=1024`)
-3. Increase memory limit in docker-compose.yaml
-4. Reduce `SYNC_ENGINE_TIMEOUT_MS` for faster timeouts
-4. Exclude large files or problematic directories with `EXCLUDE_PATHS`
-
-### Files Not Being Processed
-
-Check that:
-
-1. Your subtitle files are named to match video files (e.g., `movie.mkv` and `movie.srt`)
-2. `SCAN_PATHS` matches your mounted volumes
-3. Files haven't already been synced (check for `.ffsubsync.srt` files)
-4. Files aren't being auto-skipped due to repeated failures (check skip status in Web UI)
-
-## Docker Hub
-
-Pull the latest image:
-
-```bash
-docker pull mrorbitman/subsyncarr:latest
-```
-
-**Docker Hub Repository:** [mrorbitman/subsyncarr](https://hub.docker.com/r/mrorbitman/subsyncarr)
-
-## Contributing
-
-Issues and pull requests are welcome! Please report bugs or suggest features via GitHub Issues.
-
-## License
-
-See LICENSE file for details.
+Open-source under the original project license. Maintained at [https://github.com/Jorman/SubSyncArr-Ng](https://github.com/Jorman/SubSyncArr-Ng).
