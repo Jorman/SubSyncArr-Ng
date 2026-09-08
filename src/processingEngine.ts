@@ -75,10 +75,10 @@ export class ProcessingEngine extends EventEmitter {
     this.log(`[${new Date().toISOString()}] Scanning for subtitle files...`);
     this.log(`[${new Date().toISOString()}] Scan paths: ${JSON.stringify(scanConfig.includePaths)}`);
 
-    const { files: srtFiles, skippedCount } = await findAllSrtFiles(scanConfig);
+    const { files: srtFiles, skippedCount, skippedFiles } = await findAllSrtFiles(scanConfig);
     this.log(`[${new Date().toISOString()}] Found ${srtFiles.length} subtitle files to process (${skippedCount} already synced)`);
 
-    this.emit('run:files_found', srtFiles, skippedCount);
+    this.emit('run:files_found', srtFiles, skippedCount, skippedFiles);
 
     // Process in batches
     this.log(`[${new Date().toISOString()}] Processing with concurrency: ${this.maxConcurrent}`);
@@ -290,13 +290,13 @@ export class ProcessingEngine extends EventEmitter {
       }
     }
 
-    if (anyEngineSucceeded || anyEnginePreviouslySynced) {
+    if (anyEngineSucceeded) {
       const finishMsg = `[${new Date().toISOString()}] ✓ Completed successfully for: ${fileName}`;
       this.log(finishMsg);
       this.appendFileLog(srtPath, finishMsg);
       this.emit('file:completed', { srtPath });
-    } else if (allEnginesSkipped) {
-      const skipAllMsg = `[${new Date().toISOString()}] ⊘ All engines skipped for: ${fileName}`;
+    } else if (allEnginesSkipped || anyEnginePreviouslySynced) {
+      const skipAllMsg = `[${new Date().toISOString()}] ⊘ All engines skipped: ${fileName}`;
       this.log(skipAllMsg);
       this.appendFileLog(srtPath, skipAllMsg);
       this.emit('file:skipped', { srtPath, reason: 'all_engines_skipped' });

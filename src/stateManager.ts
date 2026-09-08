@@ -107,6 +107,10 @@ export class StateManager extends EventEmitter {
     this.db.createFileResult(runId, filePath, videoPath);
   }
 
+  addSkippedFiles(runId: string, filePaths: string[]): void {
+    this.db.createSkippedFileResults(runId, filePaths);
+  }
+
   updateFileStatus(runId: string, filePath: string, status: FileResult['status'], currentEngine?: string | null, videoPath?: string | null): void {
     const updates: Partial<FileResult> = { status };
     if (currentEngine !== undefined) {

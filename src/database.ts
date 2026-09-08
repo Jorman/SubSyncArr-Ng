@@ -251,6 +251,25 @@ export class SubsyncarrPlusDatabase {
     stmt.run(runId, filePath, videoPath, now, now);
   }
 
+  createSkippedFileResults(runId: string, filePaths: string[]): void {
+    if (filePaths.length === 0) return;
+    const stmt = this.db.prepare(`
+      INSERT INTO file_results
+        (run_id, file_path, video_path, status, engines, created_at, updated_at)
+      VALUES (?, ?, NULL, 'skipped', ?, ?, ?)
+    `);
+    const now = Date.now();
+    const enginesPayload = JSON.stringify({
+      all: { success: true, skipped: true, message: 'Already synced on disk' },
+    });
+    const insertMany = this.db.transaction((paths: string[]) => {
+      for (const p of paths) {
+        stmt.run(runId, p, enginesPayload, now, now);
+      }
+    });
+    insertMany(filePaths);
+  }
+
   updateFileResult(runId: string, filePath: string, updates: Partial<FileResult>): void {
     const updatesWithTimestamp = { ...updates, updated_at: Date.now() };
     const fields = Object.keys(updatesWithTimestamp)

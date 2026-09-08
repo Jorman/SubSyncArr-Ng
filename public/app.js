@@ -1058,7 +1058,7 @@ class SubsyncarrPlusClient {
         break;
       case 'skipped':
         files = run.files.filter((f) => f.status === 'skipped');
-        title = `Skipped Files (${files.length})`;
+        title = `Skipped Files (${files.length > 0 ? files.length : (run.skipped || 0)})`;
         break;
       case 'failed':
         files = run.files.filter((f) => f.status === 'error');
@@ -1071,20 +1071,47 @@ class SubsyncarrPlusClient {
     document.getElementById('fileListTitle').textContent = title;
 
     if (files.length === 0) {
-      document.getElementById('fileListContent').innerHTML =
-        '<div class="file-list-empty">No files in this category</div>';
+      if (category === 'skipped' && run.skipped > 0) {
+        document.getElementById('fileListContent').innerHTML =
+          `<div class="file-list-empty">All ${run.skipped} file(s) were already synchronized prior to this run (subtitles already exist on disk).</div>`;
+      } else {
+        document.getElementById('fileListContent').innerHTML =
+          '<div class="file-list-empty">No files in this category</div>';
+      }
     } else {
       const html = files
         .map((file) => {
           const name = this.cleanFileName(file.file_path);
           const errors = category === 'failed' ? this.renderFileErrors(file) : '';
-          return `<div class="file-list-item">${this.escapeHtml(name)}${errors}</div>`;
+          const skipReason = category === 'skipped' ? this.renderFileSkipReason(file) : '';
+          return `<div class="file-list-item">
+            <div class="file-list-item-name">${this.escapeHtml(name)}</div>
+            ${skipReason}
+            ${errors}
+          </div>`;
         })
         .join('');
       document.getElementById('fileListContent').innerHTML = html;
     }
 
     document.getElementById('fileListModal').classList.remove('hidden');
+  }
+
+  renderFileSkipReason(file) {
+    let engines = {};
+    try {
+      engines = JSON.parse(file.engines || '{}');
+    } catch {
+      // ignore
+    }
+    const reasons = Object.entries(engines)
+      .filter(([, res]) => res && res.skipped)
+      .map(([name, res]) => `${name}: ${res.message || 'skipped'}`);
+
+    if (reasons.length > 0) {
+      return `<div class="file-list-skip-detail">${this.escapeHtml(reasons.join(' • '))}</div>`;
+    }
+    return `<div class="file-list-skip-detail">Already synchronized on disk</div>`;
   }
 
   // Render the error messages for each engine that failed on a file

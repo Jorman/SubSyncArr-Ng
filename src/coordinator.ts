@@ -29,8 +29,13 @@ export class ProcessingCoordinator {
       }
     });
 
-    this.engine.on('run:files_found', (files: string[], skippedCount: number) => {
+    this.engine.on('run:files_found', (files: string[], skippedCount: number, skippedFiles: string[] = []) => {
       this.currentRunId = this.stateManager.startRun(files.length, this.enabledEngines, skippedCount);
+
+      // Record pre-skipped files in database so they are visible when viewing skipped files in UI
+      if (skippedFiles.length > 0) {
+        this.stateManager.addSkippedFiles(this.currentRunId!, skippedFiles);
+      }
 
       // Add all files to database as pending (video matching happens during processing)
       for (const filePath of files) {

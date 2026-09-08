@@ -33,12 +33,14 @@ function matchesLanguageFilter(fileName: string, languages: string[]): boolean {
 export interface ScanResult {
   files: string[];
   skippedCount: number;
+  skippedFiles: string[];
 }
 
 export async function findAllSrtFiles(config: ScanConfig): Promise<ScanResult> {
   const engines = process.env.INCLUDE_ENGINES?.split(',') || ['ffsubsync', 'autosubsync', 'alass'];
   const languages = process.env.SYNC_LANGUAGES?.split(',').map((l) => l.trim()).filter(Boolean) || [];
   const files: string[] = [];
+  const skippedFiles: string[] = [];
   let skippedCount = 0;
 
   if (languages.length > 0) {
@@ -71,6 +73,7 @@ export async function findAllSrtFiles(config: ScanConfig): Promise<ScanResult> {
       ) {
         if (isAlreadySynced(fullPath, engines)) {
           skippedCount++;
+          skippedFiles.push(fullPath);
         } else {
           files.push(fullPath);
         }
@@ -87,5 +90,5 @@ export async function findAllSrtFiles(config: ScanConfig): Promise<ScanResult> {
     console.log(`${new Date().toLocaleString()} Skipped ${skippedCount} already-synced SRT files`);
   }
 
-  return { files, skippedCount };
+  return { files, skippedCount, skippedFiles };
 }
