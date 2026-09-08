@@ -2,10 +2,13 @@ name: subsyncarr
 
 services:
   subsyncarr:
-    image: mrorbitman/subsyncarr:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: subsyncarr-ng:latest
     container_name: subsyncarr
     ports:
-      - '3000:3000' # Web UI
+      - '3000:3000' # Web UI (change to '3030:3000' if port 3000 is occupied)
     volumes:
       # Any path configured with SCAN_PATHS env var must be mounted
       # If no scan paths are specified, it defaults to scan `/scan_dir` like example below.
@@ -18,9 +21,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 768M      # Hard limit - increased for file-based logging and large runs
+          memory: 2048M     # Increased from 768M to avoid OOM killer on 4K/2160p and multi-engine runs
         reservations:
-          memory: 128M      # Minimum guaranteed memory
+          memory: 256M      # Minimum guaranteed memory
     environment:
       - PUID=1000 # Set to your user's UID (run `id -u` to find it)
       - PGID=1000 # Set to your user's GID (run `id -g` to find it)
@@ -29,7 +32,9 @@ services:
       - SCAN_PATHS=/movies,/tv # Remember to mount these as volumes. Must begin with /. Default valus is `/scan_dir`
       - EXCLUDE_PATHS=/movies/temp,/tv/downloads # Exclude certain sub-directories from the scan
       - MAX_CONCURRENT_SYNC_TASKS=1 # Defaults to 1 if not set. Higher number will consume more CPU but sync your library faster
-      - INCLUDE_ENGINES=ffsubsync,autosubsync # If not set, all engines are used by default
+      - INCLUDE_ENGINES=ffsubsync,autosubsync,alass # Engines to use (ffsubsync, autosubsync, alass)
+      - AUTOSUBSYNC_PARALLELISM=1 # 1 worker to save memory and avoid OOM kills on 4K files
+      - AUTOSUBSYNC_SKIP_FORCED=true # Skip forced subtitles for autosubsync (ffsubsync and alass will handle them)
       # Memory configuration (optional):
       # - NODE_OPTIONS=--max-old-space-size=1024 # Increase if you experience OOM errors (default: 512)
       # Timeout configuration (optional - uncomment and adjust if needed):

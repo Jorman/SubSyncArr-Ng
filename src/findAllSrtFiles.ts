@@ -6,8 +6,13 @@ import { buildOutputPath } from './helpers';
 
 function isAlreadySynced(srtPath: string, engines: string[]): boolean {
   const suffixConfig = getSuffixConfig();
+  const isForced = /\.forced\.srt$/i.test(srtPath) || /[-._]forced[-._]/i.test(srtPath);
+  const skipForcedAutosubsync = process.env.AUTOSUBSYNC_SKIP_FORCED !== 'false';
 
   return engines.every((engine) => {
+    if (engine === 'autosubsync' && isForced && skipForcedAutosubsync) {
+      return true;
+    }
     const suffix = suffixConfig[engine as keyof typeof suffixConfig] || engine;
     const outputPath = buildOutputPath(srtPath, suffix);
     return existsSync(outputPath);

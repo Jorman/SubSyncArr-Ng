@@ -140,9 +140,9 @@ export class ProcessingEngine extends EventEmitter {
 
         const duration = Date.now() - startTime;
 
-        // If this engine was skipped (already processed), log and continue
+        // If this engine was skipped (already processed or skipped by rule), log and continue
         if (result.skipped) {
-          this.log(`[${new Date().toISOString()}] ⊘ ${engine} skipped (already processed): ${fileName}`);
+          this.log(`[${new Date().toISOString()}] ⊘ ${engine} skipped (${result.message || 'already processed'}): ${fileName}`);
           this.emit('file:engine_completed', {
             srtPath,
             engine,

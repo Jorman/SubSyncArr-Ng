@@ -6,6 +6,7 @@ class SubsyncarrPlusClient {
     this.historyCache = {}; // Cache run data for file lookups
     this.selectedPaths = [];
 
+    this.initTheme();
     this.initWebSocket();
     this.setupEventHandlers();
     this.fetchInitialState();
@@ -197,7 +198,49 @@ class SubsyncarrPlusClient {
     }
   }
 
+  initTheme() {
+    const savedTheme = localStorage.getItem('subsyncarr_theme');
+    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const currentTheme = savedTheme || (prefersDark ? 'dark' : 'light');
+    this.applyTheme(currentTheme);
+
+    if (window.matchMedia) {
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+        if (!localStorage.getItem('subsyncarr_theme')) {
+          this.applyTheme(e.matches ? 'dark' : 'light');
+        }
+      });
+    }
+  }
+
+  applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    const iconEl = document.getElementById('themeToggleIcon');
+    const btnEl = document.getElementById('themeToggle');
+    if (iconEl) {
+      iconEl.textContent = theme === 'dark' ? '☀️' : '🌙';
+    }
+    if (btnEl) {
+      btnEl.title = theme === 'dark' ? 'Passa alla modalità chiara' : 'Passa alla modalità scura';
+      btnEl.setAttribute('aria-label', btnEl.title);
+    }
+  }
+
+  toggleTheme() {
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    localStorage.setItem('subsyncarr_theme', newTheme);
+    this.applyTheme(newTheme);
+  }
+
   setupEventHandlers() {
+    const themeToggle = document.getElementById('themeToggle');
+    if (themeToggle) {
+      themeToggle.addEventListener('click', () => {
+        this.toggleTheme();
+      });
+    }
+
     document.getElementById('startRun').addEventListener('click', () => {
       this.startRun();
     });

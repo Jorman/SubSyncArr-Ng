@@ -2,8 +2,21 @@ import { buildOutputPath, execPromise, ProcessingResult } from './helpers';
 import { existsSync } from 'fs';
 import { getSuffixConfig } from './config';
 
+export function isForcedSubtitle(filePath: string): boolean {
+  return /\.forced\.srt$/i.test(filePath) || /[-._]forced[-._]/i.test(filePath);
+}
+
 export async function generateAutosubsyncSubtitles(srtPath: string, videoPath: string): Promise<ProcessingResult> {
   const outputPath = buildOutputPath(srtPath, getSuffixConfig().autosubsync);
+
+  // Check if forced subtitle should be skipped for autosubsync (autosubsync fails on sparse text)
+  if (isForcedSubtitle(srtPath) && process.env.AUTOSUBSYNC_SKIP_FORCED !== 'false') {
+    return {
+      success: true,
+      message: 'Skipped: autosubsync does not support forced subtitles (sparse dialogue)',
+      skipped: true,
+    };
+  }
 
   const exists = existsSync(outputPath);
   if (exists) {
@@ -15,7 +28,9 @@ export async function generateAutosubsyncSubtitles(srtPath: string, videoPath: s
   }
 
   try {
-    const command = `autosubsync "${videoPath}" "${srtPath}" "${outputPath}"`;
+    const parallelism = process.env.AUTOSUBSYNC_PARALLELISM || '1';
+    const maxShift = process.env.AUTOSUBSYNC_MAX_SHIFT_SECS ? ` --max_shift_secs ${process.env.AUTOSUBSYNC_MAX_SHIFT_SECS}` : '';
+    const command = `autosubsync --parallelism ${parallelism}${maxShift} "${videoPath}" "${srtPath}" "${outputPath}"`;
     console.log(`${new Date().toLocaleString()} Processing: ${command}`);
     const { stdout, stderr } = await execPromise(command);
     return {
