@@ -68,6 +68,7 @@ COPY --from=builder --chown=node:node /home/node/.local/bin/alass /home/node/.lo
 
 # Copy Python tools from builder
 COPY --from=builder --chown=node:node /home/node/.local /home/node/.local
+RUN ln -sf /home/node/.local/bin/ffprobe /usr/local/bin/ffprobe
 
 # Create data directory
 RUN mkdir -p /app/data && chown node:node /app/data

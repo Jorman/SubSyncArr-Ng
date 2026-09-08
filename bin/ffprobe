@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+import json
+import subprocess
+import sys
+
+# Call real ffprobe
+cmd = ["/usr/bin/ffprobe"] + sys.argv[1:]
+res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+# If JSON output was requested, ensure every stream has codec_long_name
+# (attachment streams in MKV don't have codec_long_name, causing alass serde deserialization to fail)
+if any(arg in sys.argv for arg in ["-of json", "-print_format json"]) or "-of" in sys.argv:
+    try:
+        data = json.loads(res.stdout)
+        if isinstance(data, dict) and "streams" in data:
+            for s in data["streams"]:
+                if "codec_long_name" not in s:
+                    s["codec_long_name"] = s.get("codec_type", "attachment")
+            sys.stdout.buffer.write(json.dumps(data).encode("utf-8"))
+            sys.stderr.buffer.write(res.stderr)
+            sys.exit(res.returncode)
+    except Exception:
+        pass
+
+sys.stdout.buffer.write(res.stdout)
+sys.stderr.buffer.write(res.stderr)
+sys.exit(res.returncode)

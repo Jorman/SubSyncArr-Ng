@@ -92,6 +92,7 @@ export class ProcessingEngine extends EventEmitter {
 
     // Process with each enabled engine
     let anyEngineSucceeded = false;
+    let anyEnginePreviouslySynced = false;
     let allEnginesSkipped = true;
     for (const engine of this.enabledEngines) {
       // Check cancellation before each engine
@@ -142,6 +143,9 @@ export class ProcessingEngine extends EventEmitter {
 
         // If this engine was skipped (already processed or skipped by rule), log and continue
         if (result.skipped) {
+          if (result.success && result.message?.includes('already processed')) {
+            anyEnginePreviouslySynced = true;
+          }
           this.log(`[${new Date().toISOString()}] ⊘ ${engine} skipped (${result.message || 'already processed'}): ${fileName}`);
           this.emit('file:engine_completed', {
             srtPath,
@@ -195,7 +199,7 @@ export class ProcessingEngine extends EventEmitter {
       }
     }
 
-    if (anyEngineSucceeded) {
+    if (anyEngineSucceeded || anyEnginePreviouslySynced) {
       this.log(`[${new Date().toISOString()}] ✓ Completed successfully for: ${fileName}`);
       this.emit('file:completed', { srtPath });
     } else if (allEnginesSkipped) {
