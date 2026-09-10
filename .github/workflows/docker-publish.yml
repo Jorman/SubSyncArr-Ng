@@ -13,7 +13,7 @@ on:
 
 env:
   # Primary Docker Hub image name (can be overridden via GitHub Repo Variable DOCKERHUB_REPO)
-  DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_REPO || 'jorman/subsyncarr-ng' }}
+  DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_REPO || 'chryses/subsyncarr-ng' }}
   GHCR_IMAGE: ghcr.io/${{ github.repository }}
 
 jobs:
