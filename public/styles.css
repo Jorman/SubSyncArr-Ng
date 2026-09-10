@@ -446,6 +446,28 @@ h2 {
   opacity: 0.7;
 }
 
+.btn-reset-skip {
+  padding: 2px 8px;
+  background: var(--warning, #f59e0b);
+  color: #1a1a1a;
+  font-weight: 600;
+  border: none;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.2s ease;
+}
+
+.btn-reset-skip:hover {
+  opacity: 0.9;
+}
+
+.btn-reset-skip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;

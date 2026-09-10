@@ -1,5 +1,5 @@
 import EventEmitter from 'events';
-import { SubsyncarrPlusDatabase, Run, FileResult } from './database';
+import { SubsyncarrPlusDatabase, Run, FileResult, ProcessedFileRecord } from './database';
 import { randomUUID } from 'crypto';
 import { LogFileManager } from './logFileManager';
 import * as path from 'path';
@@ -230,6 +230,21 @@ export class StateManager extends EventEmitter {
 
   getFailureStats() {
     return this.db.getFailureTrackingStats();
+  }
+
+  // Processed file tracking (survives external renames/moves, checks both video and srt)
+  getProcessedRecord(filePath: string, engine: string): ProcessedFileRecord | null {
+    return this.db.getProcessedRecord(filePath, engine);
+  }
+
+  markProcessed(
+    filePath: string,
+    engine: string,
+    videoPath: string | null,
+    videoFingerprint: string,
+    srtFingerprint: string,
+  ): void {
+    this.db.recordProcessed(filePath, engine, videoPath, videoFingerprint, srtFingerprint);
   }
 
   close() {

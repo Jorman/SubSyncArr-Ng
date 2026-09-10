@@ -54,7 +54,7 @@ export async function generateAutosubsyncSubtitles(
     }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
-    const isTimeout = errorMessage.includes('SIGTERM') || errorMessage.includes('timed out');
+    const isTimeout = errorMessage.includes('SIGTERM') || errorMessage.toLowerCase().includes('timed out');
 
     // Extract stdout/stderr from error if available
     const execError = error as { stdout?: string; stderr?: string };

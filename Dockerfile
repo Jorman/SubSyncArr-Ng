@@ -21,6 +21,7 @@ RUN npm install --ignore-scripts && npm rebuild better-sqlite3
 COPY . .
 RUN mkdir -p /home/node/.local/bin/ && cp bin/* /home/node/.local/bin/ && chown -R node:node /home/node/.local
 RUN npm run build
+RUN npm prune --omit=dev
 
 # Install Python tools as node user
 USER node

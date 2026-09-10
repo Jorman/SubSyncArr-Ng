@@ -1,6 +1,6 @@
 import { buildOutputPath, execPromise, ProcessingResult } from './helpers';
 import { existsSync, unlinkSync } from 'fs';
-import { getSuffixConfig } from './config';
+import { getSuffixConfig, getAlassExtraArgs } from './config';
 
 export async function generateAlassSubtitles(
   srtPath: string,
@@ -19,7 +19,8 @@ export async function generateAlassSubtitles(
   }
 
   try {
-    const command = `alass "${videoPath}" "${srtPath}" "${outputPath}"`;
+    const extraArgs = getAlassExtraArgs();
+    const command = `alass "${videoPath}" "${srtPath}" "${outputPath}"${extraArgs ? ` ${extraArgs}` : ''}`;
     console.log(`${new Date().toLocaleString()} Processing: ${command}`);
     const { stdout, stderr } = await execPromise(command, undefined, onLog);
     return {
@@ -39,7 +40,7 @@ export async function generateAlassSubtitles(
     }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
-    const isTimeout = errorMessage.includes('SIGTERM') || errorMessage.includes('timed out');
+    const isTimeout = errorMessage.includes('SIGTERM') || errorMessage.toLowerCase().includes('timed out');
 
     // Extract stdout/stderr from error if available
     const execError = error as { stdout?: string; stderr?: string };

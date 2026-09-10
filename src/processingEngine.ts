@@ -8,6 +8,7 @@ import { generateAutosubsyncSubtitles } from './generateAutosubsyncSubtitles';
 import { generateAlassSubtitles } from './generateAlassSubtitles';
 import { StateManager } from './stateManager';
 import { buildOutputPath } from './helpers';
+import { computeVideoFingerprint, computeSrtFingerprint } from './fingerprint';
 
 export class ProcessingEngine extends EventEmitter {
   private cancelledFiles: Set<string> = new Set();
@@ -80,17 +81,22 @@ export class ProcessingEngine extends EventEmitter {
 
     this.emit('run:files_found', srtFiles, skippedCount, skippedFiles);
 
-    // Process in batches
+    // Keep up to maxConcurrent files in flight at all times: each worker pulls the next
+    // file off the shared queue as soon as it finishes, instead of waiting for an entire
+    // fixed-size batch to drain (which stalls idle slots behind the slowest file in a batch).
     this.log(`[${new Date().toISOString()}] Processing with concurrency: ${this.maxConcurrent}`);
     this.log(`[${new Date().toISOString()}] Enabled engines: ${this.enabledEngines.join(', ')}`);
 
-    for (let i = 0; i < srtFiles.length; i += this.maxConcurrent) {
-      const batch = srtFiles.slice(i, i + this.maxConcurrent);
-      this.log(
-        `[${new Date().toISOString()}] Processing batch ${Math.floor(i / this.maxConcurrent) + 1}/${Math.ceil(srtFiles.length / this.maxConcurrent)} (${batch.length} files)`,
-      );
-      await Promise.all(batch.map((file) => this.processFile(file)));
-    }
+    let nextIndex = 0;
+    const worker = async (): Promise<void> => {
+      while (nextIndex < srtFiles.length) {
+        const file = srtFiles[nextIndex++];
+        await this.processFile(file);
+      }
+    };
+
+    const workerCount = Math.min(this.maxConcurrent, srtFiles.length);
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
     this.log(`[${new Date().toISOString()}] All files processed`);
   }
@@ -158,6 +164,24 @@ export class ProcessingEngine extends EventEmitter {
     this.log(foundVideoMsg);
     this.appendFileLog(srtPath, foundVideoMsg);
 
+    // Lazily fingerprint the video (size + 1MB head/tail sample)
+    let videoFingerprint: string | null = null;
+    const getVideoFingerprint = async (): Promise<string> => {
+      if (videoFingerprint === null) {
+        videoFingerprint = await computeVideoFingerprint(videoPath);
+      }
+      return videoFingerprint;
+    };
+
+    // Lazily fingerprint the SRT file
+    let srtFingerprint: string | null = null;
+    const getSrtFingerprint = async (): Promise<string> => {
+      if (srtFingerprint === null) {
+        srtFingerprint = await computeSrtFingerprint(srtPath);
+      }
+      return srtFingerprint;
+    };
+
     // Process with each enabled engine
     let anyEngineSucceeded = false;
     let anyEnginePreviouslySynced = false;
@@ -170,6 +194,36 @@ export class ProcessingEngine extends EventEmitter {
         this.appendFileLog(srtPath, skipMsg);
         this.emit('file:skipped', { srtPath, reason: 'cancelled' });
         return;
+      }
+
+      // Check if this engine already processed this exact video & srt combination
+      // (handles external tools like Bazarr that rename/replace output file,
+      // while detecting if Bazarr updated the subtitle with a better version)
+      const processedRecord = this.stateManager?.getProcessedRecord(srtPath, engine);
+      if (processedRecord) {
+        const vFingerprint = await getVideoFingerprint();
+        const sFingerprint = await getSrtFingerprint();
+
+        if (
+          vFingerprint === processedRecord.video_fingerprint &&
+          (!processedRecord.srt_fingerprint || sFingerprint === processedRecord.srt_fingerprint)
+        ) {
+          anyEnginePreviouslySynced = true;
+          const skipMsg = `[${new Date().toISOString()}] ⊘ Skipping ${engine} (already processed, video & subtitle unchanged): ${fileName}`;
+          this.log(skipMsg);
+          this.appendFileLog(srtPath, skipMsg);
+          this.emit('file:engine_completed', {
+            srtPath,
+            engine,
+            result: {
+              success: true,
+              duration: 0,
+              message: 'Already processed (unchanged)',
+              skipped: true,
+            },
+          });
+          continue; // allEnginesSkipped stays true
+        }
       }
 
       // Check if engine should be skipped due to consecutive failures
@@ -222,6 +276,17 @@ export class ProcessingEngine extends EventEmitter {
         }
 
         const duration = Date.now() - startTime;
+
+        // Record success in processed_files with dual fingerprint (video + srt)
+        if (result.success && this.stateManager) {
+          this.stateManager.markProcessed(
+            srtPath,
+            engine,
+            videoPath,
+            await getVideoFingerprint(),
+            await getSrtFingerprint(),
+          );
+        }
 
         // If this engine was skipped (already processed or skipped by rule), log and continue
         if (result.skipped) {

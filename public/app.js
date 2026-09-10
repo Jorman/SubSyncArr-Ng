@@ -755,7 +755,7 @@ class SubsyncarrPlusClient {
           <div class="engine-status">
             ${file.current_engine ? `⚙️ Working on ${this.escapeHtml(file.current_engine)}` : 'Starting...'}
           </div>
-          ${this.renderEngineResults(engines)}
+          ${this.renderEngineResults(engines, file.file_path)}
           <div class="file-live-log-box">
             <div class="live-log-top">
               <span class="live-tag"><span class="live-dot"></span> LIVE FILE LOG</span>
@@ -794,7 +794,7 @@ class SubsyncarrPlusClient {
               </button>
             </div>
           </div>
-          ${this.renderEngineResults(engines)}
+          ${this.renderEngineResults(engines, file.file_path)}
         </div>
       `;
       })
@@ -831,7 +831,7 @@ class SubsyncarrPlusClient {
     const enginesContainer = document.getElementById('fileLogsEngines');
     if (file && file.engines) {
       const engines = JSON.parse(file.engines || '{}');
-      enginesContainer.innerHTML = this.renderEngineResults(engines);
+      enginesContainer.innerHTML = this.renderEngineResults(engines, file.file_path);
     } else {
       enginesContainer.innerHTML = '';
     }
@@ -896,7 +896,7 @@ class SubsyncarrPlusClient {
     });
   }
 
-  renderEngineResults(engines) {
+  renderEngineResults(engines, filePath) {
     return Object.entries(engines)
       .map(([name, result]) => {
         const icon = result.success ? '✓' : '✗';
@@ -907,17 +907,47 @@ class SubsyncarrPlusClient {
             ? `<div class="engine-error-message">${this.escapeHtml(result.message)}</div>`
             : '';
 
+        // Only the "3+ consecutive failures" circuit breaker sets skipped+!success;
+        // the "already processed" skip is skipped+success and needs no reset.
+        const resetBtn =
+          result.skipped && !result.success && filePath
+            ? `<button class="btn-reset-skip" type="button" onclick="client.resetSkipStatus('${filePath.replace(/'/g, "\\'")}', '${name}', this)">↻ Reset</button>`
+            : '';
+
         return `
         <div class="engine-result ${className}">
           <div class="engine-result-row">
             <span>${icon} ${name}</span>
             <span class="duration">${duration}s</span>
+            ${resetBtn}
           </div>
           ${error}
         </div>
       `;
       })
       .join('');
+  }
+
+  async resetSkipStatus(filePath, engine, buttonEl) {
+    try {
+      const response = await fetch('/api/skip-status/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filePath, engine }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to reset skip status');
+      }
+
+      if (buttonEl) {
+        buttonEl.textContent = '✓ Reset';
+        buttonEl.disabled = true;
+      }
+    } catch (error) {
+      console.error('Failed to reset skip status:', error);
+      alert('Failed to reset skip status');
+    }
   }
 
   calculateEngineStats(files) {

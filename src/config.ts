@@ -17,6 +17,10 @@ export function getSuffixConfig(): SuffixConfig {
   };
 }
 
+export function getAlassExtraArgs(): string {
+  return process.env.ALASS_EXTRA_ARGS || '';
+}
+
 export interface RetentionConfig {
   keepRunsDays: number; // Keep complete runs for N days
   trimLogsDays: number; // Trim logs after N days

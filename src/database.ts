@@ -36,8 +36,16 @@ export interface EngineFailureTracking {
   last_failure_time: number | null;
   last_success_time: number | null;
   is_skipped: boolean;
-  created_at: number;
   updated_at: number;
+}
+
+export interface ProcessedFileRecord {
+  file_path: string;
+  engine: string;
+  video_path: string | null;
+  video_fingerprint: string;
+  srt_fingerprint: string;
+  processed_at: number;
 }
 
 export class SubsyncarrPlusDatabase {
@@ -145,6 +153,27 @@ export class SubsyncarrPlusDatabase {
         CREATE INDEX idx_failure_tracking_file ON engine_failure_tracking(file_path);
         CREATE INDEX idx_failure_tracking_skipped ON engine_failure_tracking(is_skipped);
       `);
+    }
+
+    // Migration: Create processed_files table for anti-loop video/srt fingerprint tracking
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS processed_files (
+        file_path TEXT NOT NULL,
+        engine TEXT NOT NULL,
+        video_path TEXT,
+        video_fingerprint TEXT NOT NULL,
+        srt_fingerprint TEXT NOT NULL DEFAULT '',
+        processed_at INTEGER NOT NULL,
+        PRIMARY KEY (file_path, engine)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_processed_files_path ON processed_files(file_path);
+    `);
+
+    // Ensure srt_fingerprint column exists if table existed previously without it
+    const processedColumns = this.db.pragma('table_info(processed_files)') as Array<{ name: string }>;
+    if (processedColumns.length > 0 && !processedColumns.some((col) => col.name === 'srt_fingerprint')) {
+      this.db.exec(`ALTER TABLE processed_files ADD COLUMN srt_fingerprint TEXT NOT NULL DEFAULT ''`);
     }
   }
 
@@ -434,6 +463,36 @@ export class SubsyncarrPlusDatabase {
     });
 
     return { totalSkipped: totalSkipped.count, skippedByEngine };
+  }
+
+  // Processed files tracking methods
+  getProcessedRecord(filePath: string, engine: string): ProcessedFileRecord | null {
+    const result = this.db
+      .prepare('SELECT * FROM processed_files WHERE file_path = ? AND engine = ?')
+      .get(filePath, engine);
+    return result ? (result as ProcessedFileRecord) : null;
+  }
+
+  recordProcessed(
+    filePath: string,
+    engine: string,
+    videoPath: string | null,
+    videoFingerprint: string,
+    srtFingerprint: string,
+  ): void {
+    this.db
+      .prepare(
+        `
+      INSERT INTO processed_files (file_path, engine, video_path, video_fingerprint, srt_fingerprint, processed_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(file_path, engine) DO UPDATE SET
+        video_path = excluded.video_path,
+        video_fingerprint = excluded.video_fingerprint,
+        srt_fingerprint = excluded.srt_fingerprint,
+        processed_at = excluded.processed_at
+    `,
+      )
+      .run(filePath, engine, videoPath, videoFingerprint, srtFingerprint, Date.now());
   }
 
   close() {

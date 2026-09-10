@@ -14,7 +14,9 @@ SubSyncArr-Ng is non-destructive: it preserves your original subtitles untouched
 - 🗑️ **Orphaned Subtitle Cleanup (`DELETE_ORPHANED_SRT=true`)**: Automatically purges orphaned subtitle files and their previously synced variants if no corresponding video file exists on disk.
 - 🎯 **Smart TV Episode Number Matching**: Intelligently resolves episode numbering differences between subtitles and videos (e.g., matching `00x20` to `S00E20`), preventing valid TV subtitles from being misidentified as orphans.
 - 🛠️ **MKV Attachment Streams Fix for `alass`**: Includes an integrated `ffprobe` wrapper that handles MKV files containing embedded attachment streams (such as subtitle fonts or cover art) without crashing Rust's JSON deserializer.
-- 🚀 **4K Remux / OOM Protection**: Optimizes `autosubsync` worker parallelism (`AUTOSUBSYNC_PARALLELISM=1`) and automatically delegates sparse forced subtitles (`AUTOSUBSYNC_SKIP_FORCED=true`) to `ffsubsync` and `alass`, preventing memory exhaustion and false failures.
+- ⚡ **Continuous Worker Pool**: Dynamic queue-based concurrency replaces rigid batching—as soon as any worker completes a file, it immediately pulls the next file from the queue, maximizing CPU utilization.
+- 🧬 **Dual-Fingerprint Anti-Loop (Video + SRT)**: Prevents endless re-processing loops when external tools (Bazarr, Plex, promotion scripts) rename or move synced subtitles. Computes a fast header/tail SHA-256 for the video and full SHA-256 for the subtitle. If Bazarr downloads an updated/better subtitle, SubSyncArr-Ng automatically detects the change and resyncs!
+- ↻ **Interactive Circuit Breaker Reset**: Direct `[↻ Reset]` button right inside the Web UI file cards to unblock files blacklisted by the 3-failure circuit breaker with a single click.
 - 📁 **Extended Video Formats**: Native support for `.mkv`, `.mp4`, `.avi`, `.mov`, `.ts`, `.m4v`, `.webm`, `.wmv`, and `.flv`.
 
 ---
@@ -149,6 +151,7 @@ Open your browser at **`http://localhost:3030`** (or your server's IP address on
 | `FFSUBSYNC_SUFFIX` | `ffsubsync` | Custom suffix for ffsubsync outputs (e.g. `movie.en.ffsubsync.srt`) |
 | `AUTOSUBSYNC_SUFFIX` | `autosubsync` | Custom suffix for autosubsync outputs |
 | `ALASS_SUFFIX` | `alass` | Custom suffix for alass outputs |
+| `ALASS_EXTRA_ARGS` | _(none)_ | Extra CLI flags passed directly to `alass` (e.g. `--disable-fps-guessing`, `--split-penalty 15`, `--no-split`) |
 | `SYNC_ENGINE_TIMEOUT_MS` | `1800000` | Engine timeout in milliseconds (default 30 minutes) |
 | `WEB_PORT` | `3000` | Internal port for the Web UI (mapped to host port via docker-compose) |
 | `WEB_HOST` | `0.0.0.0` | Host interface for Web UI binding |
